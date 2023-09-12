@@ -22,7 +22,7 @@ type Database = [(TableName, DataFrame)]
 findTableByName :: Database -> String -> Maybe DataFrame
 findTableByName [] _ = Nothing  -- If the database is empty, return Nothing
 findTableByName ((tableName, frame) : rest) name
-  | tableName == name = Just frame  -- If the table name matches, return the DataFrame
+  | map toLower tableName == map toLower name = Just frame  -- Case-insensitive comparison
   | otherwise = findTableByName rest name  -- Continue searching in the rest of the database
 -- findTableByName _ _ = error "findTableByName not implemented"
 
