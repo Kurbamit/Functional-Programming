@@ -10,6 +10,7 @@ where
 
 import DataFrame (DataFrame)
 import InMemoryTables (TableName)
+import Data.Char (toLower)
 
 type ErrorMessage = String
 
