@@ -25,7 +25,6 @@ findTableByName [] _ = Nothing  -- If the database is empty, return Nothing
 findTableByName ((tableName, frame) : rest) name
   | map toLower tableName == map toLower name = Just frame  -- Case-insensitive comparison
   | otherwise = findTableByName rest name  -- Continue searching in the rest of the database
--- findTableByName _ _ = error "findTableByName not implemented"
 
 -- 2) implement the function which parses a "select * from ..."
 -- sql statement and extracts a table name from the statement
