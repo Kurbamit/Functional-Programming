@@ -11,6 +11,7 @@ where
 import DataFrame (DataFrame)
 import InMemoryTables (TableName)
 import Data.Char (toLower)
+import Data.List (isPrefixOf)
 
 type ErrorMessage = String
 
@@ -28,8 +29,25 @@ findTableByName ((tableName, frame) : rest) name
 
 -- 2) implement the function which parses a "select * from ..."
 -- sql statement and extracts a table name from the statement
+-- Checking the format of SELECT statement
 parseSelectAllStatement :: String -> Either ErrorMessage TableName
-parseSelectAllStatement _ = error "parseSelectAllStatement not implemented"
+parseSelectAllStatement statement 
+  | null statement = Left "Input is empty"
+  | isValid statement = Right (getTableName statement)
+  | otherwise = Left "Invalid format"
+
+-- Check if the statement starts with a valid prefix
+isValid :: String -> Bool
+isValid statement = "select * from " `isPrefixOf` (map toLower statement)
+
+-- Extract the table name
+getTableName :: String -> String
+getTableName statement =
+  let lastCharacter = last statement
+  in
+    if lastCharacter == ';'
+      then drop 14 (init statement)
+      else drop 14 statement
 
 -- 3) implement the function which validates tables: checks if
 -- columns match value types, if rows sizes match columns,..
