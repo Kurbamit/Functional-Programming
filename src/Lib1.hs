@@ -25,12 +25,12 @@ type Database = [(TableName, DataFrame)]
 -- 1) implement the function which returns a data frame by its name
 -- in provided Database list
 findTableByName :: Database -> String -> Maybe DataFrame
-
+findTableByName _ _ = error "findTableByName not implemented"
 
 -- 2) implement the function which parses a "select * from ..."
 -- sql statement and extracts a table name from the statement
 parseSelectAllStatement :: String -> Either ErrorMessage TableName
-
+parseSelectAllStatement _ = error "parseSelectAllStatement not implemented"
 
 -- 3) implement the function which validates tables: checks if
 -- columns match value types, if rows sizes match columns,..
