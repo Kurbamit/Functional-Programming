@@ -8,7 +8,7 @@ module Lib1
   )
 where
 
-import DataFrame (DataFrame (DataFrame), ColumnType (IntegerType, StringType, BoolType), Value (IntegerValue, StringValue, BoolValue, NullValue), Column (Column), Row)
+import DataFrame (DataFrame (DataFrame), ColumnType (IntegerType, StringType, BoolType), Value (IntegerValue, StringValue, BoolValue, NullValue), Column (Column))
 import InMemoryTables (TableName)
 import Data.Char (toLower)
 import Data.List (isPrefixOf, transpose)
