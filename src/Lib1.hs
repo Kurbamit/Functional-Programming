@@ -8,13 +8,10 @@ module Lib1
   )
 where
 
---import DataFrame (DataFrame, Value (BoolValue, IntegerValue, StringValue), ColumnType (..), Column (Column), Row)
-import DataFrame (DataFrame (DataFrame), ColumnType (IntegerType, StringType, BoolType), Value (IntegerValue, StringValue, BoolValue, NullValue), Column (Column), Row)
+import DataFrame (DataFrame (DataFrame), ColumnType (IntegerType, StringType, BoolType), Value (IntegerValue, StringValue, BoolValue, NullValue), Column (Column))
 import InMemoryTables (TableName)
 import Data.Char (toLower)
-import Data.List (isPrefixOf)
-import Data.List (transpose)
-
+import Data.List (isPrefixOf, transpose)
 
 type ErrorMessage = String
 
@@ -41,7 +38,7 @@ parseSelectAllStatement statement
 
 -- Check if the statement starts with a valid prefix
 isValid :: String -> Bool
-isValid statement = "select * from " `isPrefixOf` (map toLower statement)
+isValid statement = "select * from " `isPrefixOf` map toLower statement
 
 -- Extract the table name
 getTableName :: String -> String
@@ -87,4 +84,48 @@ checkRowsLength (DataFrame columns rows) = allRowsHaveCorrectLength
 -- answer for this task!), it should respect terminal
 -- width (in chars, provided as the first argument)
 renderDataFrameAsTable :: Integer -> DataFrame -> String
-renderDataFrameAsTable _ _ = error "renderDataFrameAsTable not implemented"
+renderDataFrameAsTable _ (DataFrame columns rows) =
+  let
+    -- Calculate the maximum width for each column
+    columnWidths = map (maximum . map valueWidth) (transpose rows)
+
+    -- Create a separator row
+    separator = "+-" ++ concatMap (`replicate` '-') columnWidths ++ "-+\n"
+
+    -- Render the header row
+    headerRow = renderRow columnWidths (map columnNameAndType columns)
+
+    -- Render each data row
+    dataRows = map (renderRow columnWidths . map valueToString) rows
+  in
+    unlines (separator : headerRow : separator : dataRows ++ [separator])
+
+-- Calculate the width of a value for column alignment
+valueWidth :: Value -> Int
+valueWidth NullValue = 4
+valueWidth (IntegerValue x) = length (show x)
+valueWidth (StringValue s) = length s
+valueWidth (BoolValue _) = 5
+
+-- Render a row of values with proper column alignment
+renderRow :: [Int] -> [String] -> String
+renderRow widths values =
+  "| " ++ concatMap (\(value, width) -> padValue value width ++ " | ") (zip values widths)
+
+-- Pad a value to the specified width
+padValue :: String -> Int -> String
+padValue value width =
+  let padding = width - length value
+  in value ++ replicate padding ' '
+
+-- Get column name and type as a string
+columnNameAndType :: Column -> String
+columnNameAndType (Column name colType) = name ++ " (" ++ show colType ++ ")"
+
+-- Convert a Value to a String
+valueToString :: Value -> String
+valueToString NullValue = "NULL"
+valueToString (IntegerValue x) = show x
+valueToString (StringValue s) = s
+valueToString (BoolValue True) = "TRUE"
+valueToString (BoolValue False) = "FALSE"
