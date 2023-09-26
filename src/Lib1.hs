@@ -83,6 +83,8 @@ checkRowsLength (DataFrame columns rows) = allRowsHaveCorrectLength
 -- as ascii-art table (use your imagination, there is no "correct"
 -- answer for this task!), it should respect terminal
 -- width (in chars, provided as the first argument)
+
+{-
 renderDataFrameAsTable :: Integer -> DataFrame -> String
 renderDataFrameAsTable _ (DataFrame columns rows) =
   let
@@ -129,3 +131,4 @@ valueToString (IntegerValue x) = show x
 valueToString (StringValue s) = s
 valueToString (BoolValue True) = "TRUE"
 valueToString (BoolValue False) = "FALSE"
+-}
