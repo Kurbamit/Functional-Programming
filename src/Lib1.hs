@@ -123,12 +123,10 @@ padValue value width =
 -- Get column name and type as a string
 columnNameAndType :: Column -> String
 columnNameAndType (Column name colType) = name ++ " (" ++ show colType ++ ")"
-
--- Convert a Value to a String
-valueToString :: Value -> String
-valueToString NullValue = "NULL"
-valueToString (IntegerValue x) = show x
-valueToString (StringValue s) = s
-valueToString (BoolValue True) = "TRUE"
-valueToString (BoolValue False) = "FALSE"
 -}
+
+valueToString :: Value -> String
+valueToString (IntegerValue integer) = show integer
+valueToString (StringValue string)   = show string
+valueToString (BoolValue bool)       = show bool
+valueToString NullValue              = "Null"
