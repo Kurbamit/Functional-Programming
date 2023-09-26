@@ -124,15 +124,19 @@ padValue value width =
   in value ++ replicate padding ' '
 -}
 
+-- Scales given column widths to fit size of terminal
 fitWidths :: Integer -> [Integer] -> [Integer]
 fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
   where factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
-                -- Total width of terminal when excluding column separators --
+                -- Total width of terminal when excluding column separators
           where effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
 
+-- Scale a width by a given factor
 scaleWidth :: Rational -> Integer -> Integer
 scaleWidth factor width = floor (factor * fromIntegral width)
 
+-- Converts data frame to list of lists of strings
+-- Each internal list of strings is effectively a row from the table
 dataFrameToStrings :: DataFrame -> [[String]]
 dataFrameToStrings (DataFrame columns rows)
   = map columnToString columns
