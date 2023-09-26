@@ -84,6 +84,9 @@ checkRowsLength (DataFrame columns rows) = allRowsHaveCorrectLength
 -- answer for this task!), it should respect terminal
 -- width (in chars, provided as the first argument)
 
+renderDataFrameAsTable :: Integer -> DataFrame -> String
+renderDataFrameAsTable _ _ = "Todo"
+
 {-
 renderDataFrameAsTable :: Integer -> DataFrame -> String
 renderDataFrameAsTable _ (DataFrame columns rows) =
@@ -121,10 +124,24 @@ padValue value width =
   in value ++ replicate padding ' '
 -}
 
+-- fitWidths :: [Integer] -> Integer -> [Integer]
+--fitWidths widths terminalWidth = map (floor.(* weight).fromIntegral) widths
+--    where weight = fromIntegral terminalWidth / fromIntegral (sum widths)
+
+-- scaleWidth :: Integer -> Fractional -> Integer
+-- scaleWidth n  = fromIntegral n
+
+fitWidths :: [Integer] -> Integer -> [Integer]
+fitWidths columnWidths terminalWidth = map (scaleWidth factor) columnWidths
+  where factor = fromIntegral terminalWidth / fromIntegral (sum columnWidths)
+
+scaleWidth :: Rational -> Integer -> Integer
+scaleWidth factor width = floor (factor * fromIntegral width) 
+
 dataFrameToStrings :: DataFrame -> [[String]]
 dataFrameToStrings (DataFrame columns rows)
-    = map convertColumnToString columns
-    : map (map convertValueToString) rows
+  = map columnToString columns
+  : map (map valueToString) rows
 
 columnToString :: Column -> String
 columnToString (Column string _) = string
