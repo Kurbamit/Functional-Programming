@@ -124,15 +124,8 @@ padValue value width =
   in value ++ replicate padding ' '
 -}
 
--- fitWidths :: [Integer] -> Integer -> [Integer]
---fitWidths widths terminalWidth = map (floor.(* weight).fromIntegral) widths
---    where weight = fromIntegral terminalWidth / fromIntegral (sum widths)
-
--- scaleWidth :: Integer -> Fractional -> Integer
--- scaleWidth n  = fromIntegral n
-
-fitWidths :: [Integer] -> Integer -> [Integer]
-fitWidths columnWidths terminalWidth = map (scaleWidth factor) columnWidths
+fitWidths :: Integer -> [Integer] -> [Integer]
+fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
   where factor = fromIntegral terminalWidth / fromIntegral (sum columnWidths)
 
 scaleWidth :: Rational -> Integer -> Integer
