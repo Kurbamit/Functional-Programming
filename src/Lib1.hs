@@ -127,9 +127,11 @@ padValue value width =
 -- Scales given column widths to fit size of terminal
 fitWidths :: Integer -> [Integer] -> [Integer]
 fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
-  where factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
-                -- Total width of terminal when excluding column separators
-          where effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
+  where
+    factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
+      where
+        -- Total width of terminal when excluding column separators
+        effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
 
 -- Scale a width by a given factor
 scaleWidth :: Rational -> Integer -> Integer
