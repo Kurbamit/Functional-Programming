@@ -104,25 +104,13 @@ renderDataFrameAsTable _ (DataFrame columns rows) =
     dataRows = map (renderRow columnWidths . map valueToString) rows
   in
     unlines (separator : headerRow : separator : dataRows ++ [separator])
-
--- Calculate the width of a value for column alignment
-valueWidth :: Value -> Int
-valueWidth NullValue = 4
-valueWidth (IntegerValue x) = length (show x)
-valueWidth (StringValue s) = length s
-valueWidth (BoolValue _) = 5
-
--- Render a row of values with proper column alignment
-renderRow :: [Int] -> [String] -> String
-renderRow widths values =
-  "| " ++ concatMap (\(value, width) -> padValue value width ++ " | ") (zip values widths)
-
--- Pad a value to the specified width
-padValue :: String -> Int -> String
-padValue value width =
-  let padding = width - length value
-  in value ++ replicate padding ' '
 -}
+
+-- Render a row with column separators
+-- Pad/reduce columns as necessary
+-- If a column's contents do not fit inside the column it cuts off the end and appends ".."
+renderRow :: [String] -> [Integer] -> String
+renderRow row columnWidths = "Todo"
 
 -- Scales given column widths to fit size of terminal
 fitWidths :: Integer -> [Integer] -> [Integer]
