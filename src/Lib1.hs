@@ -121,6 +121,11 @@ padValue value width =
   in value ++ replicate padding ' '
 -}
 
+convertDataFrameToStrings :: DataFrame -> [[String]]
+convertDataFrameToStrings (DataFrame columns rows)
+    = map convertColumnToString columns
+    : map (map convertValueToString) rows
+
 columnToString :: Column -> String
 columnToString (Column string _) = string
 
