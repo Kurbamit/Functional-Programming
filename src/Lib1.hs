@@ -31,7 +31,7 @@ findTableByName ((tableName, frame) : rest) name
 -- sql statement and extracts a table name from the statement
 -- Checking the format of SELECT statement
 parseSelectAllStatement :: String -> Either ErrorMessage TableName
-parseSelectAllStatement statement 
+parseSelectAllStatement statement
   | null statement = Left "Input is empty"
   | isValid statement = Right (getTableName statement)
   | otherwise = Left "Invalid format"
@@ -70,7 +70,7 @@ validateColumnValues columnType = all (\value ->
     )
 
 checkEveryColumn :: DataFrame -> Bool
-checkEveryColumn (DataFrame columns values) = 
+checkEveryColumn (DataFrame columns values) =
   all (\(Column _ columnType, columnValues) -> validateColumnValues columnType columnValues)
   (zip columns (transpose values))
 
@@ -126,10 +126,12 @@ padValue value width =
 
 fitWidths :: Integer -> [Integer] -> [Integer]
 fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
-  where factor = fromIntegral terminalWidth / fromIntegral (sum columnWidths)
+  where factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
+                -- Total width of terminal when excluding column separators --
+          where effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
 
 scaleWidth :: Rational -> Integer -> Integer
-scaleWidth factor width = floor (factor * fromIntegral width) 
+scaleWidth factor width = floor (factor * fromIntegral width)
 
 dataFrameToStrings :: DataFrame -> [[String]]
 dataFrameToStrings (DataFrame columns rows)
