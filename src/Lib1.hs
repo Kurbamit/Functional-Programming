@@ -119,11 +119,10 @@ padValue :: String -> Int -> String
 padValue value width =
   let padding = width - length value
   in value ++ replicate padding ' '
-
--- Get column name and type as a string
-columnNameAndType :: Column -> String
-columnNameAndType (Column name colType) = name ++ " (" ++ show colType ++ ")"
 -}
+
+columnToString :: Column -> String
+columnToString (Column string _) = string
 
 valueToString :: Value -> String
 valueToString (IntegerValue integer) = show integer
