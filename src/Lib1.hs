@@ -91,31 +91,42 @@ renderDataFrameAsTable terminalWidth dataFrame =
     widths = fitWidths terminalWidth baseWidths
       where
         -- Base column widths before scaling
-        baseWidths = map (toInteger.maximum.map length) (transpose rows)
+        baseWidths = map (maximum.map length) (transpose rows)
     renderedRows = map (renderRow widths) rows
     -- Row separators for header and table body
     -- Build table
     table  = header ++ body ++ [headerSeparator]
       where
-        headerSeparator = "========="
-        bodySeparator   = "---------"
+        headerSeparator = replicate effectiveWidth '='
+          where
+            -- Width fitting function is not completely accurate, so terminal width can't be used for separator width
+            effectiveWidth = sum widths + length widths + 1
+        bodySeparator = "|" ++ concatMap ((++ "|").(`replicate` '-')) widths
         header = [headerSeparator, head renderedRows, headerSeparator]
-        body   = buildTableBody (tail renderedRows) bodySeparator
+        body = buildTableBody (tail renderedRows) bodySeparator
   in
     unlines table
 
 buildTableBody :: [String] -> String -> [String]
 buildTableBody [] separator         = []
-buildTableBody [row] separator      = row : buildTableBody [] separator 
+buildTableBody [row] separator      = row : buildTableBody [] separator
 buildTableBody (row:rows) separator = row : separator : buildTableBody rows separator
 
 -- Render a row with column separators
 -- Pad/reduce columns as necessary
-renderRow :: [Integer] -> [String] -> String
-renderRow widths row = "Todo"
+renderRow :: [Int] -> [String] -> String
+renderRow widths row = "|" ++ concatMap renderElement (zip widths row)
+
+renderElement :: (Int, String) -> String
+renderElement (width, element)
+  = if length element > width
+    -- If element is too long then cuts off the end and appends ".."
+    then take (width - 2) element ++ ".." ++ "|"
+    -- Otherwise pads with whitespace
+    else element ++ replicate (width - length element) ' ' ++ "|"
 
 -- Scales given column widths to fit size of terminal
-fitWidths :: Integer -> [Integer] -> [Integer]
+fitWidths :: Integer -> [Int] -> [Int]
 fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
   where
     factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
@@ -123,8 +134,8 @@ fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
         -- Total width of terminal when excluding column separators
         effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
 
--- Scale a width by a given factor
-scaleWidth :: Rational -> Integer -> Integer
+-- Scale a width by a factor
+scaleWidth :: Rational -> Int -> Int
 scaleWidth factor width = floor (factor * fromIntegral width)
 
 -- Converts data frame to list of lists of strings
