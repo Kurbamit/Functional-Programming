@@ -85,32 +85,34 @@ checkRowsLength (DataFrame columns rows) = allRowsHaveCorrectLength
 -- width (in chars, provided as the first argument)
 
 renderDataFrameAsTable :: Integer -> DataFrame -> String
-renderDataFrameAsTable _ _ = "Todo"
-
-{-
-renderDataFrameAsTable :: Integer -> DataFrame -> String
-renderDataFrameAsTable _ (DataFrame columns rows) =
+renderDataFrameAsTable terminalWidth dataFrame =
   let
-    -- Calculate the maximum width for each column
-    columnWidths = map (maximum . map valueWidth) (transpose rows)
-
-    -- Create a separator row
-    separator = "+-" ++ concatMap (`replicate` '-') columnWidths ++ "-+\n"
-
-    -- Render the header row
-    headerRow = renderRow columnWidths (map columnNameAndType columns)
-
-    -- Render each data row
-    dataRows = map (renderRow columnWidths . map valueToString) rows
+    rows = dataFrameToStrings dataFrame
+    widths = fitWidths terminalWidth baseWidths
+      where
+        -- Base column widths before scaling
+        baseWidths = map (toInteger.maximum.map length) (transpose rows)
+    renderedRows = map (renderRow widths) rows
+    -- Row separators for header and table body
+    -- Build table
+    table  = header ++ body ++ [headerSeparator]
+      where
+        headerSeparator = "========="
+        bodySeparator   = "---------"
+        header = [headerSeparator, head renderedRows, headerSeparator]
+        body   = buildTableBody (tail renderedRows) bodySeparator
   in
-    unlines (separator : headerRow : separator : dataRows ++ [separator])
--}
+    unlines table
+
+buildTableBody :: [String] -> String -> [String]
+buildTableBody [] separator         = []
+buildTableBody [row] separator      = row : buildTableBody [] separator 
+buildTableBody (row:rows) separator = row : separator : buildTableBody rows separator
 
 -- Render a row with column separators
 -- Pad/reduce columns as necessary
--- If a column's contents do not fit inside the column it cuts off the end and appends ".."
-renderRow :: [String] -> [Integer] -> String
-renderRow row columnWidths = "Todo"
+renderRow :: [Integer] -> [String] -> String
+renderRow widths row = "Todo"
 
 -- Scales given column widths to fit size of terminal
 fitWidths :: Integer -> [Integer] -> [Integer]
