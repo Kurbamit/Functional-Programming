@@ -132,7 +132,7 @@ fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
     factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
       where
         -- Total width of terminal when excluding column separators
-        effectiveWidth = terminalWidth - toInteger (length columnWidths) - 1
+        effectiveWidth = fromIntegral terminalWidth - length columnWidths - 1
 
 -- Scale a width by a factor
 scaleWidth :: Rational -> Int -> Int
