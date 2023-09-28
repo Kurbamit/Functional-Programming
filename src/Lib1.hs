@@ -31,7 +31,7 @@ findTableByName ((tableName, frame) : rest) name
 -- sql statement and extracts a table name from the statement
 -- Checking the format of SELECT statement
 parseSelectAllStatement :: String -> Either ErrorMessage TableName
-parseSelectAllStatement statement 
+parseSelectAllStatement statement
   | null statement = Left "Input is empty"
   | isValid statement = Right (getTableName statement)
   | otherwise = Left "Invalid format"
@@ -70,7 +70,7 @@ validateColumnValues columnType = all (\value ->
     )
 
 checkEveryColumn :: DataFrame -> Bool
-checkEveryColumn (DataFrame columns values) = 
+checkEveryColumn (DataFrame columns values) =
   all (\(Column _ columnType, columnValues) -> validateColumnValues columnType columnValues)
   (zip columns (transpose values))
 
@@ -83,49 +83,73 @@ checkRowsLength (DataFrame columns rows) = allRowsHaveCorrectLength
 -- as ascii-art table (use your imagination, there is no "correct"
 -- answer for this task!), it should respect terminal
 -- width (in chars, provided as the first argument)
+
 renderDataFrameAsTable :: Integer -> DataFrame -> String
-renderDataFrameAsTable _ (DataFrame columns rows) =
+renderDataFrameAsTable terminalWidth dataFrame =
   let
-    -- Calculate the maximum width for each column
-    columnWidths = map (maximum . map valueWidth) (transpose rows)
-
-    -- Create a separator row
-    separator = "+-" ++ concatMap (`replicate` '-') columnWidths ++ "-+\n"
-
-    -- Render the header row
-    headerRow = renderRow columnWidths (map columnNameAndType columns)
-
-    -- Render each data row
-    dataRows = map (renderRow columnWidths . map valueToString) rows
+    rows = dataFrameToStrings dataFrame
+    widths = fitWidths terminalWidth baseWidths
+      where
+        -- Base column widths before scaling
+        baseWidths = map (maximum.map length) (transpose rows)
+    renderedRows = map (renderRow widths) rows
+    -- Row separators for header and table body
+    -- Build table
+    table  = header ++ body ++ [headerSeparator]
+      where
+        headerSeparator = replicate effectiveWidth '='
+          where
+            -- Width fitting function is not completely accurate, so terminal width can't be used for separator width
+            effectiveWidth = sum widths + length widths + 1
+        bodySeparator = "|" ++ concatMap ((++ "|").(`replicate` '-')) widths
+        header = [headerSeparator, head renderedRows, headerSeparator]
+        body = buildTableBody (tail renderedRows) bodySeparator
   in
-    unlines (separator : headerRow : separator : dataRows ++ [separator])
+    unlines table
 
--- Calculate the width of a value for column alignment
-valueWidth :: Value -> Int
-valueWidth NullValue = 4
-valueWidth (IntegerValue x) = length (show x)
-valueWidth (StringValue s) = length s
-valueWidth (BoolValue _) = 5
+buildTableBody :: [String] -> String -> [String]
+buildTableBody [] separator         = []
+buildTableBody [row] separator      = row : buildTableBody [] separator
+buildTableBody (row:rows) separator = row : separator : buildTableBody rows separator
 
--- Render a row of values with proper column alignment
+-- Render a row with column separators
+-- Pad/reduce columns as necessary
 renderRow :: [Int] -> [String] -> String
-renderRow widths values =
-  "| " ++ concatMap (\(value, width) -> padValue value width ++ " | ") (zip values widths)
+renderRow widths row = "|" ++ concatMap renderElement (zip widths row)
 
--- Pad a value to the specified width
-padValue :: String -> Int -> String
-padValue value width =
-  let padding = width - length value
-  in value ++ replicate padding ' '
+renderElement :: (Int, String) -> String
+renderElement (width, element)
+  = if length element > width
+    -- If element is too long then cuts off the end and appends ".."
+    then take (width - 2) element ++ ".." ++ "|"
+    -- Otherwise pads with whitespace
+    else element ++ replicate (width - length element) ' ' ++ "|"
 
--- Get column name and type as a string
-columnNameAndType :: Column -> String
-columnNameAndType (Column name colType) = name ++ " (" ++ show colType ++ ")"
+-- Scales given column widths to fit size of terminal
+fitWidths :: Integer -> [Int] -> [Int]
+fitWidths terminalWidth columnWidths = map (scaleWidth factor) columnWidths
+  where
+    factor = fromIntegral effectiveWidth / fromIntegral (sum columnWidths)
+      where
+        -- Total width of terminal when excluding column separators
+        effectiveWidth = fromIntegral terminalWidth - length columnWidths - 1
 
--- Convert a Value to a String
+-- Scale a width by a factor
+scaleWidth :: Rational -> Int -> Int
+scaleWidth factor width = floor (factor * fromIntegral width)
+
+-- Converts data frame to list of lists of strings
+-- Each internal list of strings is effectively a row from the table
+dataFrameToStrings :: DataFrame -> [[String]]
+dataFrameToStrings (DataFrame columns rows)
+  = map columnToString columns
+  : map (map valueToString) rows
+
+columnToString :: Column -> String
+columnToString (Column string _) = string
+
 valueToString :: Value -> String
-valueToString NullValue = "NULL"
-valueToString (IntegerValue x) = show x
-valueToString (StringValue s) = s
-valueToString (BoolValue True) = "TRUE"
-valueToString (BoolValue False) = "FALSE"
+valueToString (IntegerValue integer) = show integer
+valueToString (StringValue string)   = show string
+valueToString (BoolValue bool)       = show bool
+valueToString NullValue              = "Null"
