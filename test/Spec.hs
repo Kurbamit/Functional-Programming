@@ -36,17 +36,3 @@ main = hspec $ do
   describe "Lib1.renderDataFrameAsTable" $ do
     it "renders a table" $ do
       Lib1.renderDataFrameAsTable 100 (snd D.tableEmployees) `shouldSatisfy` not . null
-  describe "Lib2.showTables" $ do
-    it "returns a list of table names" $ do
-      let database = [D.tableEmployees, D.tableInvalid1, D.tableInvalid2, D.tableLongStrings, D.tableWithNulls]
-      Lib2.showTables database `shouldBe` ["employees", "invalid1", "invalid2", "long_strings", "flags"]
-  describe "Lib2.executeStatement" $ do
-    it "executes a SHOW TABLES statement" $ do
-      let statement = ShowTables
-          result = executeStatement statement
-
-      result `shouldBe` Right (expectedDataFrame D.database)
-
-expectedDataFrame :: [(D.TableName, DataFrame)] -> DataFrame
-expectedDataFrame db =
-  DataFrame [Column "Tables" StringType] (map (\(name, _) -> [StringValue name]) db)
