@@ -40,19 +40,25 @@ parseStatement input =
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
-executeStatement :: ParsedStatement -> Either ErrorMessage [String]
+executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
 executeStatement (SQLStatement command) = case command of
-  ShowTables -> Right $ map fst database
+  ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) database
   ShowTableColumns tableName -> case findTable tableName database of
-    Just (DataFrame columns _) -> Right $ map (\(Column colName _) -> colName) columns
+    Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
+
 runSql :: String -> Either ErrorMessage [TableName]
 runSql input = do
   parsed <- parseStatement input
-  executeStatement parsed
+  case executeStatement parsed of
+    Right (DataFrame [Column _ StringType] rows) ->
+      Right $ map (\(StringValue tableName : _) -> tableName) rows
+    Left err -> Left err
+    _ -> Left "Invalid result format"
+
 
 
 -- Helper function to perform case-insensitive lookup
