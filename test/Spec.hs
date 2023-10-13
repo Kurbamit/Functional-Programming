@@ -36,3 +36,18 @@ main = hspec $ do
   describe "Lib1.renderDataFrameAsTable" $ do
     it "renders a table" $ do
       Lib1.renderDataFrameAsTable 100 (snd D.tableEmployees) `shouldSatisfy` not . null
+  describe "Lib2.runSql" $ do
+    it "returns all tables names" $ do
+      Lib2.runSql "SHOW TABLES" `shouldBe` Right ["employees", "invalid1", "invalid2", "long_strings", "flags"]
+  describe "Lib2.runSql" $ do
+    it "SHOW TABLES is case-insensitive" $ do
+      Lib2.runSql "ShOw TaBlEs" `shouldBe` Right ["employees", "invalid1", "invalid2", "long_strings", "flags"]
+  describe "Lib2.runSql" $ do
+    it "SHOW TABLE employees returns employee table column names" $ do
+      Lib2.runSql "SHOW TABLE employees" `shouldBe` Right ["id","name","surname"]
+  describe "Lib2.runSql" $ do
+    it "SHOW TABLE employees is case-insensitive" $ do
+      Lib2.runSql "ShOw TaBlE employees" `shouldBe` Right ["id","name","surname"]
+  describe "Lib2.runSql" $ do
+    it "SHOW TABLE table names is case-sensitive" $ do
+      Lib2.runSql "SHOW TABLE employEEs" `shouldBe` Left "Table not found"

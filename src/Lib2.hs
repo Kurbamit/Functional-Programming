@@ -10,7 +10,8 @@ module Lib2
 where
 
 import Data.Char
-import Data.List (find)
+import Data.Maybe (listToMaybe)
+import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
 import InMemoryTables (TableName, database)
 
@@ -30,13 +31,13 @@ data SQLCommand
 -- Parses user input into an entity representing a parsed
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement input =
-  let inputUpper = map toUpper input
-  in case inputUpper of
-    "SHOW TABLES" -> Right (SQLStatement ShowTables)
-    _ -> case words inputUpper of
-      ["SHOW", "TABLE", tableName] -> Right (SQLStatement (ShowTableColumns tableName))
-      _ -> Left "Not implemented: parseStatement"
+parseStatement input
+  | "show tables" `caseInsensitiveEquals` input = Right (SQLStatement ShowTables)
+  | otherwise = case map toLower <$> words input of
+    ["show", "tables"] -> Right (SQLStatement ShowTables)
+    ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns tableName))
+    _ -> Left "Not implemented: parseStatement"
+
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
@@ -60,10 +61,15 @@ runSql input = do
     _ -> Left "Invalid result format"
 
 
-
 -- Helper function to perform case-insensitive lookup
 findTable :: TableName -> Database -> Maybe DataFrame
 findTable targetTable database =
-  case find (\(tableName, _) -> map toUpper tableName == map toUpper targetTable) database of
-    Just (_, table) -> Just table
-    Nothing -> Nothing
+  listToMaybe [table | (tableName, table) <- database, targetTable `caseInsensitiveEquals` tableName]
+
+-- Helper function to convert a string to lowercase
+toLowerString :: String -> String
+toLowerString = map toLower
+
+-- Helper function to perform case-insensitive comparison
+caseInsensitiveEquals :: String -> String -> Bool
+caseInsensitiveEquals a b = toLowerString a == toLowerString b
