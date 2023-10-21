@@ -20,6 +20,8 @@ import GHC.Conc (par)
 import System.IO (putStrLn)
 import Debug.Trace ( trace )
 import Data.List (elemIndex)
+import Data.List (isInfixOf)
+import Text.ParserCombinators.ReadP (string)
 
 
 type ErrorMessage = String
@@ -39,13 +41,31 @@ data SQLCommand
 -- Parses user input into an entity representing a parsed
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement input
-  | "show tables" `caseInsensitiveEquals` input = Right (SQLStatement ShowTables)
-  | otherwise = case map toLower <$> words input of
-    ["show", "tables"] -> Right (SQLStatement ShowTables)
-    ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns tableName))
-    ["select", columns, "from", tableName] -> Right (SQLStatement (Select tableName (words columns)))
-    _ -> Left "Not implemented: parseStatement"
+parseStatement input =
+    let lowerCaseInput = map toLower input
+    in case words lowerCaseInput of
+        ["show", "tables"] -> Right (SQLStatement ShowTables)
+        ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
+        ["select", columns, "from", tableName] -> Right (SQLStatement (Select (extractSubstring input tableName) (words columns)))
+        _ -> Left "Not implemented: parseStatement"
+
+extractSubstring :: String -> String -> String
+extractSubstring input stringToMach = 
+  if stringToMach `isInfixOf` input
+    then stringToMach
+    else extractFromOriginalString input (findSubstringPosition (map toLower input) stringToMach)
+  where
+    extractFromOriginalString :: String -> (Int, Int) -> String
+    extractFromOriginalString originalString (start, end) =
+      take (end - start + 1) (drop start originalString)
+
+findSubstringPosition :: String -> String -> (Int, Int)
+findSubstringPosition string substring = findPosition 0 string
+  where
+    findPosition :: Int -> String -> (Int, Int)
+    findPosition index string@(x:xs)
+      | substring `isPrefixOf` string = (index, index + length substring - 1)
+      | otherwise = findPosition (index + 1) xs
 
 selectFromTable :: TableName -> [String] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns database = do
@@ -92,16 +112,11 @@ runSql input = do
     Right _ -> Left "Invalid result format"
     Left err -> Left err
 
-
--- Helper function to perform case-insensitive lookup
+-- Helper function to perform case-sensitive lookup
 findTable :: TableName -> Database -> Maybe DataFrame
 findTable targetTable database =
-  listToMaybe [table | (tableName, table) <- database, targetTable `caseInsensitiveEquals` tableName]
+  listToMaybe [table | (tableName, table) <- database, targetTable `caseSensitiveEquals` tableName]
 
--- Helper function to convert a string to lowercase
-toLowerString :: String -> String
-toLowerString = map toLower
-
--- Helper function to perform case-insensitive comparison
-caseInsensitiveEquals :: String -> String -> Bool
-caseInsensitiveEquals a b = toLowerString a == toLowerString b
+-- Helper function to perform case-sensitive comparison
+caseSensitiveEquals :: String -> String -> Bool
+caseSensitiveEquals a b = a == b
