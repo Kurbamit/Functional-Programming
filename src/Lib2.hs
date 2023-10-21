@@ -34,7 +34,7 @@ data ParsedStatement = SQLStatement SQLCommand
 data SQLCommand
   = ShowTables
   | ShowTableColumns TableName -- Add a new constructor for showing table columns
-  | Select TableName [String] 
+  | Select TableName [String]
   -- Define additional SQL commands like SUM, MIN, MAX here
   deriving (Show, Eq)
 
@@ -46,11 +46,11 @@ parseStatement input =
     in case words lowerCaseInput of
         ["show", "tables"] -> Right (SQLStatement ShowTables)
         ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-        ["select", columns, "from", tableName] -> Right (SQLStatement (Select (extractSubstring input tableName) (words columns)))
+        ["select", columns, "from", tableName] -> Right (SQLStatement (Select (extractSubstring input tableName) (map (extractSubstring input) (words columns))))
         _ -> Left "Not implemented: parseStatement"
 
 extractSubstring :: String -> String -> String
-extractSubstring input stringToMach = 
+extractSubstring input stringToMach =
   if stringToMach `isInfixOf` input
     then stringToMach
     else extractFromOriginalString input (findSubstringPosition (map toLower input) stringToMach)
