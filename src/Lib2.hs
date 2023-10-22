@@ -46,8 +46,16 @@ parseStatement input =
     in case words lowerCaseInput of
         ["show", "tables"] -> Right (SQLStatement ShowTables)
         ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-        ["select", columns, "from", tableName] -> Right (SQLStatement (Select (extractSubstring input tableName) (map (extractSubstring input) (words columns))))
+        ("select" : columnNames) -> do
+            let tableName = extractTableName columnNames
+            let columns = take (length columnNames - 2) columnNames
+            Right (SQLStatement (Select (extractSubstring input tableName) (map (extractSubstring input) columns)))
         _ -> Left "Not implemented: parseStatement"
+
+extractTableName :: [String] -> String
+extractTableName ("from" : tableName : _) = tableName
+extractTableName (column : columns) = 
+  let table = extractTableName columns in table
 
 extractSubstring :: String -> String -> String
 extractSubstring input stringToMach =
@@ -68,16 +76,16 @@ findSubstringPosition string substring = findPosition 0 string
       | otherwise = findPosition (index + 1) xs
 
 selectFromTable :: TableName -> [String] -> Database -> Either ErrorMessage DataFrame
-selectFromTable tableName columns database = do
+selectFromTable tableName columns database =
   case findTable tableName database of
-    Just (DataFrame tableColumns tableRows) -> do
+    Just (DataFrame tableColumns tableRows) -> 
       let selectedColumns = filterColumns tableColumns columns
-      let selectedRows = map (\row -> filterRow row (getColumnsWithIndexes selectedColumns tableColumns)) tableRows
-      return (DataFrame selectedColumns selectedRows)
+          selectedRows = map (\row -> filterRow row (getColumnsWithIndexes selectedColumns tableColumns)) tableRows
+      in Right (DataFrame selectedColumns selectedRows)
     Nothing -> Left "Table not found"
 
 filterColumns :: [Column] -> [String] -> [Column]
-filterColumns allColumns selectedColumns
+filterColumns allColumns selectedColumns  
   | "*" `elem` selectedColumns = allColumns
   | otherwise = filter (\(Column name _) -> name `elem` selectedColumns) allColumns
 
