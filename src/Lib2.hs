@@ -5,6 +5,7 @@ module Lib2
   ( parseStatement,
     executeStatement,
     runSql,
+    findTable,
     ParsedStatement (..),
     SQLCommand (..)
   )
