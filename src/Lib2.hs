@@ -82,18 +82,19 @@ selectFromTable tableName columns database =
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` columns
       then
-        let selectedRows = map (\row -> filterRow row (getColumnsWithIndexes tableColumns tableColumns)) tableRows
-        in Right (DataFrame tableColumns selectedRows)
+        let requestedColumns = tableColumns  -- Include all columns
+            selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
+        in Right (DataFrame requestedColumns selectedRows)
       else
-        let columnObjects = map (\colName -> Column colName StringType) columns
-            missingColumns = filter (\col -> col `notElem` tableColumns) columnObjects
-        in if null missingColumns
+        let columnNames = [name | Column name _ <- tableColumns]  -- Extract column names
+            nonExistentColumns = filter (`notElem` columnNames) columns
+        in if not (null nonExistentColumns)
            then
-             let requestedColumns = filterColumns tableColumns columns
+             Left ("Column(s) not found: " ++ unwords nonExistentColumns)
+           else
+             let requestedColumns = filter (\(Column name _) -> name `elem` columns) tableColumns
                  selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
              in Right (DataFrame requestedColumns selectedRows)
-           else
-             Left ("Column(s) not found: " ++ unwords (map (\(Column name _) -> name) missingColumns))
     Nothing -> Left "Table not found"
 
 filterColumns :: [Column] -> [String] -> [Column]
