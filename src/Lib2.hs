@@ -11,6 +11,7 @@ module Lib2
 where
 
 import Data.Char
+import Data.String (IsString, fromString)
 import Data.Maybe (listToMaybe)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
@@ -78,10 +79,21 @@ findSubstringPosition string substring = findPosition 0 string
 selectFromTable :: TableName -> [String] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns database =
   case findTable tableName database of
-    Just (DataFrame tableColumns tableRows) -> 
-      let selectedColumns = filterColumns tableColumns columns
-          selectedRows = map (\row -> filterRow row (getColumnsWithIndexes selectedColumns tableColumns)) tableRows
-      in Right (DataFrame selectedColumns selectedRows)
+    Just (DataFrame tableColumns tableRows) ->
+      if "*" `elem` columns
+      then
+        let selectedRows = map (\row -> filterRow row (getColumnsWithIndexes tableColumns tableColumns)) tableRows
+        in Right (DataFrame tableColumns selectedRows)
+      else
+        let columnObjects = map (\colName -> Column colName StringType) columns
+            missingColumns = filter (\col -> col `notElem` tableColumns) columnObjects
+        in if null missingColumns
+           then
+             let requestedColumns = filterColumns tableColumns columns
+                 selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
+             in Right (DataFrame requestedColumns selectedRows)
+           else
+             Left ("Column(s) not found: " ++ unwords (map (\(Column name _) -> name) missingColumns))
     Nothing -> Left "Table not found"
 
 filterColumns :: [Column] -> [String] -> [Column]

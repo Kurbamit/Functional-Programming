@@ -46,6 +46,10 @@ sqlCaseSensitivityTestCases =
   , SqlParsingTest "parses 'SELECT name, surname FROM employees' (lowercase table name)" "SELECT name surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "surname"])))
   , SqlParsingTest "parses 'SELECT name, surname FROM Employees' (mixed case table name)" "SELECT name surname FROM Employees" (Right (SQLStatement (Select "Employees" ["name", "surname"])))
   , SqlParsingTest "parses 'SELECT name, surname FROM EMPLOYEES' (uppercase table name)" "SELECT name surname FROM EMPLOYEES" (Right (SQLStatement (Select "EMPLOYEES" ["name", "surname"])))
+
+  -- Additional test cases for column name case-sensitivity
+  , SqlParsingTest "parses 'SELECT NAME, SURNAME FROM employees' (uppercase column names)" "SELECT NAME SURNAME FROM employees" (Right (SQLStatement (Select "employees" ["NAME", "SURNAME"])))
+  , SqlParsingTest "parses 'SELECT name, Surname FROM Employees' (mixed case column names with mixed case table name)" "SELECT name Surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "Surname"])))
   ]
 
 -- Not parsed statements
