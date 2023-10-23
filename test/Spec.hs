@@ -8,11 +8,18 @@ import Test.Hspec
 import Control.Monad (forM_)
 
 data RunSqlTest = RunSqlTest
-  { description :: String
-  , sqlQuery :: String
+  { showTableDescription :: String
+  , showTableSqlQuery :: String
   , expectedResult :: Either String [String]
   }
 
+data SqlParsingTest = SqlParsingTest
+  { selectDescription :: String
+  , selectSqlQuery :: String
+  , expectedStatement :: Either String ParsedStatement
+  }
+
+-- SHOW TABLE(S) test cases
 runSqlTests :: [RunSqlTest]
 runSqlTests =
   [ RunSqlTest "'SHOW TABLES' returns all tables names" "SHOW TABLES" (Right ["employees", "invalid1", "invalid2", "long_strings", "flags"])
@@ -23,6 +30,32 @@ runSqlTests =
   , RunSqlTest "'ShOw TaBlE emploYEES' - table case-sensitive" "ShOw TaBlE emploYEES" (Left "Table not found")
   ]
 
+-- SELECT test cases
+sqlParsingTestCases :: [SqlParsingTest]
+sqlParsingTestCases =
+  [ SqlParsingTest "parses 'SELECT * FROM employees'" "SELECT * FROM employees" (Right (SQLStatement (Select "employees" ["*"])))
+  , SqlParsingTest "parses 'SELECT name, surname FROM employees'" "SELECT name surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "surname"])))
+  ]
+
+-- Case sensitivity test cases
+sqlCaseSensitivityTestCases :: [SqlParsingTest]
+sqlCaseSensitivityTestCases =
+  [ SqlParsingTest "parses 'SELECT * FROM employees' (lowercase table name)" "SELECT * FROM employees" (Right (SQLStatement (Select "employees" ["*"])))
+  , SqlParsingTest "parses 'SELECT * FROM Employees' (mixed case table name)" "SELECT * FROM Employees" (Right (SQLStatement (Select "Employees" ["*"])))
+  , SqlParsingTest "parses 'SELECT * FROM EMPLOYEES' (uppercase table name)" "SELECT * FROM EMPLOYEES" (Right (SQLStatement (Select "EMPLOYEES" ["*"])))
+  , SqlParsingTest "parses 'SELECT name, surname FROM employees' (lowercase table name)" "SELECT name surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "surname"])))
+  , SqlParsingTest "parses 'SELECT name, surname FROM Employees' (mixed case table name)" "SELECT name surname FROM Employees" (Right (SQLStatement (Select "Employees" ["name", "surname"])))
+  , SqlParsingTest "parses 'SELECT name, surname FROM EMPLOYEES' (uppercase table name)" "SELECT name surname FROM EMPLOYEES" (Right (SQLStatement (Select "EMPLOYEES" ["name", "surname"])))
+  ]
+
+-- Not parsed statements
+sqlNotParsedTestCases :: [SqlParsingTest]
+sqlNotParsedTestCases =
+  [ SqlParsingTest "random statement" "Blah blah" (Left "Not implemented: parseStatement")
+  , SqlParsingTest "Similar statement 'SHOW'" "SHOW" (Left "Not implemented: parseStatement")
+  ]
+
+-------------------------------------------------------------------------------------------------------- 
 main :: IO ()
 main = hspec $ do
   describe "Lib1.findTableByName" $ do
@@ -51,60 +84,26 @@ main = hspec $ do
     it "passes valid tables" $ do
       Lib1.validateDataFrame (snd D.tableWithNulls) `shouldBe` Right ()
 
+-- SHOW TABLE(S) tests
   describe "SHOW TABLE(S) testing" $ do
     forM_ runSqlTests $ \test -> do
-      it (description test) $ do
-        Lib2.runSql (sqlQuery test) `shouldBe` expectedResult test
+      it (showTableDescription test) $ do
+        Lib2.runSql (showTableSqlQuery test) `shouldBe` expectedResult test
 
+-- SELECT tests
   describe "SQL Parsing and Execution" $ do
-    it "parses 'SELECT * FROM employees'" $ do
-      let sqlStatement = "SELECT * FROM employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "employees" ["*"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-
-    it "parses 'SELECT name, surname FROM employees'" $ do
-      let sqlStatement = "SELECT name surname FROM employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "employees" ["name", "surname"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
+    forM_ sqlParsingTestCases $ \test -> do
+      it (selectDescription test) $ do
+        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
   
-  describe "SQL Parsing and Execution (Table Name Case-Sensitivity)" $ do
-    it "parses 'SELECT * FROM employees' (lowercase table name)" $ do
-      let sqlStatement = "SELECT * FROM employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "employees" ["*"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
+-- Case sensitivity tests
+  describe "SQL Parsing and Execution (Table/Column Name Case-Sensitivity)" $ do
+    forM_ sqlCaseSensitivityTestCases $ \test -> do
+      it (selectDescription test) $ do
+        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
 
-    it "parses 'SELECT * FROM Employees' (mixed case table name)" $ do
-      let sqlStatement = "SELECT * FROM Employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "Employees" ["*"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-
-    it "parses 'SELECT * FROM EMPLOYEES' (uppercase table name)" $ do
-      let sqlStatement = "SELECT * FROM EMPLOYEES"
-      let expectedParsedStatement = Right (SQLStatement (Select "EMPLOYEES" ["*"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-
-    it "parses 'SELECT name, surname FROM employees' (lowercase table name)" $ do
-      let sqlStatement = "SELECT name surname FROM employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "employees" ["name", "surname"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-
-    it "parses 'SELECT name, surname FROM Employees' (mixed case table name)" $ do
-      let sqlStatement = "SELECT name surname FROM Employees"
-      let expectedParsedStatement = Right (SQLStatement (Select "Employees" ["name", "surname"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-
-    it "parses 'SELECT name, surname FROM EMPLOYEES' (uppercase table name)" $ do
-      let sqlStatement = "SELECT name surname FROM EMPLOYEES"
-      let expectedParsedStatement = Right (SQLStatement (Select "EMPLOYEES" ["name", "surname"]))
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-  
+-- Not parsed statements tests
   describe "Not parsed statements" $ do
-    it "random statement" $ do
-      let sqlStatement = "Blah blah"
-      let expectedParsedStatement = Left "Not implemented: parseStatement"
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
-    
-    it "Similar statement 'SHOW'" $ do
-      let sqlStatement = "SHOW"
-      let expectedParsedStatement = Left "Not implemented: parseStatement"
-      parseStatement sqlStatement `shouldBe` expectedParsedStatement
+    forM_ sqlNotParsedTestCases $ \test -> do
+      it (selectDescription test) $ do
+        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
