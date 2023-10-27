@@ -5,6 +5,8 @@ module Lib2
   ( parseStatement,
     executeStatement,
     runSql,
+    ColumnWithAggregate,
+    columnNamesToRows,
     ParsedStatement (..),
     SQLCommand (..)
   )
@@ -44,6 +46,9 @@ data Aggregate
   | Sum
   deriving (Show, Eq)
 
+-- -- Helper function for testing purpose to convert a list of Column into rows of Value
+columnNamesToRows :: [Column] -> [Row]
+columnNamesToRows = map (\(Column name _) -> [StringValue name])
 
 -- Parses user input into an entity representing a parsed
 -- statement

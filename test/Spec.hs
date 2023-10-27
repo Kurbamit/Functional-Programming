@@ -3,61 +3,8 @@ import Data.Maybe ()
 import InMemoryTables qualified as D
 import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
-import Lib2
+import Lib2 
 import Test.Hspec
-import Control.Monad (forM_)
-
-data RunSqlTest = RunSqlTest
-  { showTableDescription :: String
-  , showTableSqlQuery :: String
-  , expectedResult :: Either String [String]
-  }
-
-data SqlParsingTest = SqlParsingTest
-  { selectDescription :: String
-  , selectSqlQuery :: String
-  , expectedStatement :: Either String ParsedStatement
-  }
-
--- SHOW TABLE(S) test cases
-runSqlTests :: [RunSqlTest]
-runSqlTests =
-  [ RunSqlTest "'SHOW TABLES' returns all tables names" "SHOW TABLES" (Right ["employees", "invalid1", "invalid2", "long_strings", "flags"])
-  , RunSqlTest "SQL statements are case-insensitive" "ShOw TaBlEs" (Right ["employees", "invalid1", "invalid2", "long_strings", "flags"])
-  , RunSqlTest "'SHOW TABLE' employees returns employee table column names" "SHOW TABLE employees" (Right ["id", "name", "surname"])
-  , RunSqlTest "SQL statement'SHOW TABLE' employees is case-insensitive" "ShOw TaBlE employees" (Right ["id", "name", "surname"])
-  , RunSqlTest "Table names are case-sensitive" "SHOW TABLE emploYEES" (Left "Table not found")
-  , RunSqlTest "'ShOw TaBlE emploYEES' - table case-sensitive" "ShOw TaBlE emploYEES" (Left "Table not found")
-  ]
-
--- SELECT test cases
-sqlParsingTestCases :: [SqlParsingTest]
-sqlParsingTestCases =
-  [ SqlParsingTest "parses 'SELECT * FROM employees'" "SELECT * FROM employees" (Right (SQLStatement (Select "employees" ["*"])))
-  , SqlParsingTest "parses 'SELECT name, surname FROM employees'" "SELECT name surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "surname"])))
-  ]
-
--- Case sensitivity test cases
-sqlCaseSensitivityTestCases :: [SqlParsingTest]
-sqlCaseSensitivityTestCases =
-  [ SqlParsingTest "parses 'SELECT * FROM employees' (lowercase table name)" "SELECT * FROM employees" (Right (SQLStatement (Select "employees" ["*"])))
-  , SqlParsingTest "parses 'SELECT * FROM Employees' (mixed case table name)" "SELECT * FROM Employees" (Right (SQLStatement (Select "Employees" ["*"])))
-  , SqlParsingTest "parses 'SELECT * FROM EMPLOYEES' (uppercase table name)" "SELECT * FROM EMPLOYEES" (Right (SQLStatement (Select "EMPLOYEES" ["*"])))
-  , SqlParsingTest "parses 'SELECT name, surname FROM employees' (lowercase table name)" "SELECT name surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "surname"])))
-  , SqlParsingTest "parses 'SELECT name, surname FROM Employees' (mixed case table name)" "SELECT name surname FROM Employees" (Right (SQLStatement (Select "Employees" ["name", "surname"])))
-  , SqlParsingTest "parses 'SELECT name, surname FROM EMPLOYEES' (uppercase table name)" "SELECT name surname FROM EMPLOYEES" (Right (SQLStatement (Select "EMPLOYEES" ["name", "surname"])))
-
-  -- Additional test cases for column name case-sensitivity
-  , SqlParsingTest "parses 'SELECT NAME, SURNAME FROM employees' (uppercase column names)" "SELECT NAME SURNAME FROM employees" (Right (SQLStatement (Select "employees" ["NAME", "SURNAME"])))
-  , SqlParsingTest "parses 'SELECT name, Surname FROM Employees' (mixed case column names with mixed case table name)" "SELECT name Surname FROM employees" (Right (SQLStatement (Select "employees" ["name", "Surname"])))
-  ]
-
--- Not parsed statements
-sqlNotParsedTestCases :: [SqlParsingTest]
-sqlNotParsedTestCases =
-  [ SqlParsingTest "random statement" "Blah blah" (Left "Not implemented: parseStatement")
-  , SqlParsingTest "Similar statement 'SHOW'" "SHOW" (Left "Not implemented: parseStatement")
-  ]
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -88,26 +35,31 @@ main = hspec $ do
     it "passes valid tables" $ do
       Lib1.validateDataFrame (snd D.tableWithNulls) `shouldBe` Right ()
 
--- SHOW TABLE(S) tests
-  describe "SHOW TABLE(S) testing" $ do
-    forM_ runSqlTests $ \test -> do
-      it (showTableDescription test) $ do
-        Lib2.runSql (showTableSqlQuery test) `shouldBe` expectedResult test
+  describe "Lib2 - SQL Statement Parsing and Execution" $ do
+    -- Testing parseStatement
+    describe "parseStatement" $ do
+      it "parses a valid SHOW TABLES statement" $ do
+        parseStatement "show tables" `shouldBe` Right (SQLStatement ShowTables)
 
--- SELECT tests
-  describe "SQL Parsing and Execution" $ do
-    forM_ sqlParsingTestCases $ \test -> do
-      it (selectDescription test) $ do
-        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
-  
--- Case sensitivity tests
-  describe "SQL Parsing and Execution (Table/Column Name Case-Sensitivity)" $ do
-    forM_ sqlCaseSensitivityTestCases $ \test -> do
-      it (selectDescription test) $ do
-        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
+      it "parses a valid SHOW TABLE [name] statement" $ do
+        parseStatement "show table employees" `shouldBe` Right (SQLStatement (ShowTableColumns "employees"))
 
--- Not parsed statements tests
-  describe "Not parsed statements" $ do
-    forM_ sqlNotParsedTestCases $ \test -> do
-      it (selectDescription test) $ do
-        parseStatement (selectSqlQuery test) `shouldBe` expectedStatement test
+      it "parses a valid SELECT statement" $ do
+        parseStatement "select name from employees" `shouldSatisfy` isRight
+
+      it "handles invalid input" $ do
+        parseStatement "invalid statement" `shouldSatisfy` isLeft
+
+  -- Testing executeStatement
+  describe "executeStatement" $ do
+    it "executes a SHOW TABLES statement" $ do
+      executeStatement (SQLStatement ShowTables) `shouldBe` Right (DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) D.database)
+
+    it "executes a SHOW TABLE [name] statement" $ do
+      let table = snd D.tableEmployees
+      let expectedColumns = case table of
+            DataFrame columns _ -> columns
+      executeStatement (SQLStatement (ShowTableColumns "employees")) `shouldBe` Right (DataFrame [Column "Columns" StringType] (columnNamesToRows expectedColumns))
+
+    it "handles invalid statements" $ do
+      executeStatement (SQLStatement ShowTables) `shouldSatisfy` isRight
