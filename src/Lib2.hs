@@ -22,6 +22,7 @@ import Debug.Trace ( trace, traceShow )
 import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
+import GHC.Generics (D)
 
 
 type ErrorMessage = String
@@ -34,7 +35,7 @@ data ParsedStatement = SQLStatement SQLCommand
 data SQLCommand
   = ShowTables
   | ShowTableColumns TableName -- Add a new constructor for showing table columns
-  | Select TableName [ColumnWithAggregate]
+  | Select TableName [ColumnWithAggregate] [Limit]
   -- Define additional SQL commands like SUM, MIN, MAX here
   deriving (Show, Eq)
 
@@ -44,6 +45,9 @@ data ColumnWithAggregate = ColumnWithAggregate String (Maybe Aggregate)
 data Aggregate
   = Max
   | Sum
+  deriving (Show, Eq)
+
+data Limit = Limit String Value
   deriving (Show, Eq)
 
 -- -- Helper function for testing purpose to convert a list of Column into rows of Value
@@ -58,19 +62,40 @@ parseStatement input =
     in case words lowerCaseInput of
         ["show", "tables"] -> Right (SQLStatement ShowTables)
         ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-        ("select" : columnNames) -> do
-            let tableName = extractTableName columnNames
-            let columns = formColumnWithAggregateList (take (length columnNames - 2) columnNames)
+        ("select" : rest) -> do
+            let tableName = extractTableName 1 rest
+            let columns = formColumnWithAggregateList (take (length rest - (length rest - getPosition tableName) - 1) rest)
+            let limits = extractLimits (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
             -- Commented part below extracts original column names from the input which helps to do CASE-SENSITIVE
             -- comparisons later. It is commented now because column names were represented as list of strings but that
             -- is not a case anymore. Column names will be CASE-INSENSITIVE untill we fix this
-            Right (SQLStatement (Select (extractSubstring input tableName) {-map (extractSubstring input) -} columns))
+            Right (SQLStatement (Select (extractSubstring input (getName tableName)) {-map (extractSubstring input) -} columns limits))
         _ -> Left "Not implemented: parseStatement"
 
-extractTableName :: [String] -> String
-extractTableName ("from" : tableName : _) = tableName
-extractTableName (column : columns) =
-  let table = extractTableName columns in table
+extractTableName :: Int -> [String] -> (String, Int)
+extractTableName index ("from" : tableName : _) = (tableName, index)
+extractTableName index (_ : columns) = extractTableName (index + 1) columns
+
+getName :: (String, Int) -> String
+getName (name, _) = name
+
+getPosition :: (String, Int) -> Int
+getPosition (_, position) = position
+
+extractLimits :: [String] -> [Limit]
+extractLimits [] = []
+extractLimits ("where" : rest) = extractLimits rest
+extractLimits ("or" : rest) = extractLimits rest
+extractLimits (columnName : "=" : value : rest) =
+  Limit columnName (getValueType value) : extractLimits rest
+
+getValueType :: String -> Value
+getValueType value
+  | all isDigit value = IntegerValue (read value)
+  | map toLower value == "true" = BoolValue True
+  | map toLower value == "false" = BoolValue False
+  | null value || all isSpace value = NullValue
+  | otherwise = StringValue value
 
 formColumnWithAggregateList :: [String] -> [ColumnWithAggregate]
 formColumnWithAggregateList input = map extractNameFromAggregate input
@@ -173,8 +198,8 @@ rowToValue rows = concatMap (\row -> row) rows
 applyAggregates :: DataFrame -> [ColumnWithAggregate] -> DataFrame
 applyAggregates = foldr (\column dataFrame -> applyAggregateToColumn dataFrame column)
 
-selectFromTable :: TableName -> [ColumnWithAggregate] -> Database -> Either ErrorMessage DataFrame
-selectFromTable tableName columns database =
+selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
+selectFromTable tableName columns limits database =
   case findTable tableName database of
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
@@ -215,7 +240,7 @@ executeStatement (SQLStatement command) = case command of
   ShowTableColumns tableName -> case findTable tableName database of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
-  Select tableName columns -> selectFromTable tableName columns database
+  Select tableName columns limits -> selectFromTable tableName columns limits database
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
