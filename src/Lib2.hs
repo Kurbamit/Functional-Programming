@@ -66,7 +66,7 @@ parseStatement input =
         ("select" : rest) -> do
             let tableName = extractTableName 1 rest
             let columns = formColumnWithAggregateList input (take (length rest - (length rest - getPosition tableName) - 1) rest)
-            let limits = extractLimits (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
             -- Commented part below extracts original column names from the input which helps to do CASE-SENSITIVE
             -- comparisons later. It is commented now because column names were represented as list of strings but that
             -- is not a case anymore. Column names will be CASE-INSENSITIVE untill we fix this
@@ -83,12 +83,13 @@ getName (name, _) = name
 getPosition :: (String, Int) -> Int
 getPosition (_, position) = position
 
-extractLimits :: [String] -> [Limit]
-extractLimits [] = []
-extractLimits ("where" : rest) = extractLimits rest
-extractLimits ("or" : rest) = extractLimits rest
-extractLimits (columnName : "=" : value : rest) =
-  Limit columnName (getValueType value) : extractLimits rest
+extractLimits :: String -> [String] -> [Limit]
+extractLimits _ [] = []
+extractLimits input ("where" : rest) = extractLimits input rest
+extractLimits input ("or" : rest) = extractLimits input rest
+extractLimits input (columnName : "=" : value : rest) =
+  let originalColumnName = extractSubstring input columnName
+  in Limit originalColumnName (getValueType value) : extractLimits input rest
 
 getValueType :: String -> Value
 getValueType value
@@ -124,6 +125,9 @@ findSubstringPosition string substring = findPosition 0 string
     findPosition index string@(x:xs)
       | substring `isPrefixOf` string = (index, index + length substring - 1)
       | otherwise = findPosition (index + 1) xs
+
+returnStartIndex :: (Int, Int) -> Int
+returnStartIndex (start, _) = start
 
 findMax :: [Value] -> Value
 findMax values@(value:_) =
@@ -199,14 +203,23 @@ rowToValue rows = concatMap (\row -> row) rows
 applyAggregates :: DataFrame -> [ColumnWithAggregate] -> DataFrame
 applyAggregates = foldr (\column dataFrame -> applyAggregateToColumn dataFrame column)
 
-applyLimits :: DataFrame -> [Limit] -> DataFrame
-applyLimits (DataFrame tableColumns tableRows) [] = DataFrame tableColumns tableRows
-applyLimits (DataFrame tableColumns tableRows) limits = DataFrame tableColumns filteredRows
+applyLimits :: DataFrame -> [Limit] -> Either ErrorMessage DataFrame
+applyLimits (DataFrame tableColumns tableRows) [] = Right (DataFrame tableColumns tableRows)
+applyLimits (DataFrame tableColumns tableRows) limits =
+  if allColumnNamesExistInDataFrame (extractNamesFromLimits limits) tableColumns
+    then Right (DataFrame tableColumns filteredRows)
+    else Left ("Column(s) not found (WHERE clause)")
   where
-    filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
+      filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
 
 applyLimit :: Limit -> [Row] -> [Row]
 applyLimit (Limit _ value) rows = filter (elem value) rows
+
+allColumnNamesExistInDataFrame :: [String] -> [Column] -> Bool
+allColumnNamesExistInDataFrame columnNames columns = all (\columnName -> any (\(Column name _) -> name == columnName) columns) columnNames
+
+extractNamesFromLimits :: [Limit] -> [String]
+extractNamesFromLimits limits = [name | Limit name _ <- limits]
 
 selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns limits database =
@@ -225,7 +238,10 @@ selectFromTable tableName columns limits database =
            else
              let requestedColumns = filter (\(Column name _) -> name `elem` map getColumnName columns) tableColumns
                  selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
-             in Right (applyAggregates (applyLimits (DataFrame requestedColumns selectedRows) limits) columns)
+             --in Right (applyAggregates (applyLimits (DataFrame requestedColumns selectedRows) limits) columns)
+             in case applyLimits (DataFrame requestedColumns selectedRows) limits of
+              Right dataFrame -> Right (applyAggregates dataFrame columns)
+              Left errorMessage -> Left errorMessage
     Nothing -> Left "Table not found"
 
 filterColumns :: [Column] -> [String] -> [Column]
