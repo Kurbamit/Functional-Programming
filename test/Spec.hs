@@ -35,31 +35,127 @@ main = hspec $ do
     it "passes valid tables" $ do
       Lib1.validateDataFrame (snd D.tableWithNulls) `shouldBe` Right ()
 
-  describe "Lib2 - SQL Statement Parsing and Execution" $ do
-    -- Testing parseStatement
-    describe "parseStatement" $ do
-      it "parses a valid SHOW TABLES statement" $ do
-        parseStatement "show tables" `shouldBe` Right (SQLStatement ShowTables)
+  describe "Lib2.parseStatement" $ do
+    it "parses a 'SHOW TABLES;' statement" $ do
+      Lib2.parseStatement "SHOW TABLES;" `shouldSatisfy` isRight
+    it "parses a 'SHOW TABLES;' statement case insensitively" $ do
+      Lib2.parseStatement "ShOw TaBlEs;" `shouldSatisfy` isRight
+    it "parses a 'SHOW TABLE' statement" $ do
+      Lib2.parseStatement "SHOW TABLE employees;" `shouldSatisfy` isRight
+    it "parses everything from table" $ do
+      Lib2.parseStatement "SELECT * FROM employees;" `shouldSatisfy` isRight
+    it "parses multiple columns from table" $ do
+      Lib2.parseStatement "SELECT id, name FROM employees;" `shouldSatisfy` isRight
+    it "parser do not parse invalid 'SELECT' statement" $ do
+      Lib2.parseStatement "SELEC id FROM employees;" `shouldSatisfy` isLeft
+    it "parses max function" $ do
+      Lib2.parseStatement "SELECT max(id) FROM employees;" `shouldSatisfy` isRight
+    it "'MAX()' function is case-insensitive" $ do
+      Lib2.parseStatement "SELECT MAX(id) FROM employees;" `shouldSatisfy` isRight
+    it "parses sum function" $ do
+      Lib2.parseStatement "SELECT sum(id) FROM employees;" `shouldSatisfy` isRight
+    it "'SUM()' function is case-insensitive" $ do
+      Lib2.parseStatement "SELECT SUM(id) FROM employees;" `shouldSatisfy` isRight
+    it "parses WHERE statement with strings" $ do
+      Lib2.parseStatement "SELECT name FROM employees WHERE name = 'Vi';" `shouldSatisfy` isRight
+    it "parses WHERE statement with numbers" $ do
+      Lib2.parseStatement "SELECT id FROM employees WHERE id = 1;" `shouldSatisfy` isRight
+    it "parses WHERE statement with OR" $ do
+      Lib2.parseStatement "SELECT id FROM employees WHERE id > 0 OR id < 10;" `shouldSatisfy` isRight
+    it "parses a where or function with strings, combined with sum" $ do
+      Lib2.parseStatement "SELECT SUM(id) FROM employees WHERE name <= 'E' OR surname <= 'E';" `shouldSatisfy` isRight
 
-      it "parses a valid SHOW TABLE [name] statement" $ do
-        parseStatement "show table employees" `shouldBe` Right (SQLStatement (ShowTableColumns "employees"))
+  describe "Lib2.executeStatement" $ do
+    it "executes a 'SHOW TABLES;' statement" $ do
+      case Lib2.parseStatement "SHOW TABLES;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
+    it "executes a 'SHOW TABLES;' case insensitively" $ do
+      case Lib2.parseStatement "SHOW TABLES;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
+    it "executes a 'SHOW TABLE employees;' statement" $ do
+      case Lib2.parseStatement "SHOW TABLE employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableTestResult
+    it "executes a 'SHOW TABLE employees;' statement case insensitively" $ do
+      case Lib2.parseStatement "ShOw TaBlE employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableTestResult
+    it "does not execute a 'SHOW TABLE' statement with a case insensitive name" $ do
+      case Lib2.parseStatement "SHOW TABLE EmPlOyEeS;" of
+        Left err -> err `shouldBe` err
+        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+    it "executes a 'SELECT' statement with columns" $ do
+      case Lib2.parseStatement "SELECT id, surname FROM employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right selectTestResult
+    it "does not execute a 'SELECT' statement with wrong column names" $ do
+      case Lib2.parseStatement "SELECT idd FROM employees;" of
+        Left err -> err `shouldBe` err
+        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+    it "executes a 'MAX' function with integer" $ do
+      case Lib2.parseStatement "SELECT MAX(id) FROM employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult1
+    it "executes a 'MAX' function with string" $ do
+      case Lib2.parseStatement "SELECT MAX(name) FROM employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult2
+    it "executes a 'SUM' function" $ do
+      case Lib2.parseStatement "SELECT SUM(id) FROM employees;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right sumTestResult
+    it "executes 'WHERE' statement" $ do
+      case Lib2.parseStatement "SELECT id, name FROM employees WHERE id = 1;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult1
+    it "executes 'WHERE OR' statement" $ do
+      case Lib2.parseStatement "SELECT id FROM employees WHERE id = 1 OR id = 2;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult2
 
-      it "parses a valid SELECT statement" $ do
-        parseStatement "select name from employees" `shouldSatisfy` isRight
+showTablesTestResult :: DataFrame
+showTablesTestResult = DataFrame
+  [Column "Tables" StringType]
+  [ 
+    [StringValue "employees"],
+    [StringValue "invalid1"],
+    [StringValue "invalid2"],
+    [StringValue "long_strings"],
+    [StringValue "flags"]
+  ]
 
-      it "handles invalid input" $ do
-        parseStatement "invalid statement" `shouldSatisfy` isLeft
+showTableTestResult :: DataFrame
+showTableTestResult = DataFrame
+  [Column "Columns" StringType]
+  [
+    [StringValue "id"],
+    [StringValue "name"],
+    [StringValue "surname"]
+  ]
 
-  -- Testing executeStatement
-  describe "executeStatement" $ do
-    it "executes a SHOW TABLES statement" $ do
-      executeStatement (SQLStatement ShowTables) `shouldBe` Right (DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) D.database)
+selectTestResult :: DataFrame
+selectTestResult = DataFrame
+  [Column "id" IntegerType, Column "surname" StringType]
+  [ [IntegerValue 1, StringValue "Po"],
+    [IntegerValue 2, StringValue "Dl"]
+  ]
 
-    it "executes a SHOW TABLE [name] statement" $ do
-      let table = snd D.tableEmployees
-      let expectedColumns = case table of
-            DataFrame columns _ -> columns
-      executeStatement (SQLStatement (ShowTableColumns "employees")) `shouldBe` Right (DataFrame [Column "Columns" StringType] (columnNamesToRows expectedColumns))
+maxTestResult1 :: DataFrame
+maxTestResult1 = DataFrame
+  [Column "id" IntegerType] 
+  [[IntegerValue 2]]
 
-    it "handles invalid statements" $ do
-      executeStatement (SQLStatement ShowTables) `shouldSatisfy` isRight
+maxTestResult2 :: DataFrame
+maxTestResult2 = DataFrame [Column "name" StringType] [[StringValue "Vi"]]
+
+sumTestResult :: DataFrame
+sumTestResult = DataFrame [Column "id" IntegerType] [[IntegerValue 3]]
+
+whereTestResult1 :: DataFrame
+whereTestResult1 = DataFrame
+  [Column "id" IntegerType, Column "name" StringType] [[IntegerValue 1, StringValue "Vi"]]
+
+whereTestResult2 :: DataFrame
+whereTestResult2 = DataFrame [Column "id" IntegerType] [[IntegerValue 1], [IntegerValue 2]]
