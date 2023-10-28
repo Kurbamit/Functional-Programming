@@ -22,6 +22,8 @@ import Debug.Trace ( trace, traceShow )
 import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
+import Data.List (find)
+import Data.Maybe (catMaybes)
 import GHC.Generics (D)
 
 
@@ -198,6 +200,15 @@ rowToValue rows = concatMap (\row -> row) rows
 applyAggregates :: DataFrame -> [ColumnWithAggregate] -> DataFrame
 applyAggregates = foldr (\column dataFrame -> applyAggregateToColumn dataFrame column)
 
+applyLimits :: DataFrame -> [Limit] -> DataFrame
+applyLimits (DataFrame tableColumns tableRows) [] = DataFrame tableColumns tableRows
+applyLimits (DataFrame tableColumns tableRows) limits = DataFrame tableColumns filteredRows
+  where
+    filteredRows = catMaybes (map (\limit -> (applyLimit limit tableRows)) limits)
+
+applyLimit :: Limit -> [Row] -> Maybe Row
+applyLimit (Limit _ value) rows = find (elem value) rows
+
 selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns limits database =
   case findTable tableName database of
@@ -215,7 +226,7 @@ selectFromTable tableName columns limits database =
            else
              let requestedColumns = filter (\(Column name _) -> name `elem` map getColumnName columns) tableColumns
                  selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
-             in Right (applyAggregates (DataFrame requestedColumns selectedRows) columns)
+             in Right (applyAggregates (applyLimits (DataFrame requestedColumns selectedRows) limits) columns)
     Nothing -> Left "Table not found"
 
 filterColumns :: [Column] -> [String] -> [Column]
