@@ -23,7 +23,6 @@ import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
 import Data.List (find)
-import Data.Maybe (catMaybes)
 import GHC.Generics (D)
 
 
@@ -204,10 +203,10 @@ applyLimits :: DataFrame -> [Limit] -> DataFrame
 applyLimits (DataFrame tableColumns tableRows) [] = DataFrame tableColumns tableRows
 applyLimits (DataFrame tableColumns tableRows) limits = DataFrame tableColumns filteredRows
   where
-    filteredRows = catMaybes (map (\limit -> (applyLimit limit tableRows)) limits)
+    filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
 
-applyLimit :: Limit -> [Row] -> Maybe Row
-applyLimit (Limit _ value) rows = find (elem value) rows
+applyLimit :: Limit -> [Row] -> [Row]
+applyLimit (Limit _ value) rows = filter (elem value) rows
 
 selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns limits database =
