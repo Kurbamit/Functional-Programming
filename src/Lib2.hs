@@ -65,7 +65,7 @@ parseStatement input =
         ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
         ("select" : rest) -> do
             let tableName = extractTableName 1 rest
-            let columns = formColumnWithAggregateList (take (length rest - (length rest - getPosition tableName) - 1) rest)
+            let columns = formColumnWithAggregateList input (take (length rest - (length rest - getPosition tableName) - 1) rest)
             let limits = extractLimits (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
             -- Commented part below extracts original column names from the input which helps to do CASE-SENSITIVE
             -- comparisons later. It is commented now because column names were represented as list of strings but that
@@ -98,14 +98,14 @@ getValueType value
   | null value || all isSpace value = NullValue
   | otherwise = StringValue value
 
-formColumnWithAggregateList :: [String] -> [ColumnWithAggregate]
-formColumnWithAggregateList input = map extractNameFromAggregate input
+formColumnWithAggregateList :: String -> [String] -> [ColumnWithAggregate]
+formColumnWithAggregateList input inputWords = map (\word -> extractNameFromAggregate input word) inputWords
 
-extractNameFromAggregate :: String -> ColumnWithAggregate
-extractNameFromAggregate input
-    | "max(" `isPrefixOf` input = ColumnWithAggregate (drop 4 (take (length input - 1) input)) (Just Max)
-    | "sum(" `isPrefixOf` input = ColumnWithAggregate (drop 4 (take (length input - 1) input)) (Just Sum)
-    | otherwise = ColumnWithAggregate input Nothing
+extractNameFromAggregate :: String -> String -> ColumnWithAggregate
+extractNameFromAggregate input word
+    | "max(" `isPrefixOf` word = ColumnWithAggregate (extractSubstring input (drop 4 (take (length word - 1) word))) (Just Max)
+    | "sum(" `isPrefixOf` word = ColumnWithAggregate (extractSubstring input (drop 4 (take (length word - 1) word))) (Just Sum)
+    | otherwise = ColumnWithAggregate (extractSubstring input word) Nothing
 
 extractSubstring :: String -> String -> String
 extractSubstring input stringToMach =
