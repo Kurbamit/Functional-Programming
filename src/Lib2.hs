@@ -18,7 +18,6 @@ import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
 import InMemoryTables (TableName, database)
 import Lib1 (parseSelectAllStatement)
-import Debug.Trace ( trace, traceShow )
 import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
@@ -59,16 +58,43 @@ columnNamesToRows = map (\(Column name _) -> [StringValue name])
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
 parseStatement input =
-    let lowerCaseInput = map toLower input
-    in case words lowerCaseInput of
-        ["show", "tables"] -> Right (SQLStatement ShowTables)
-        ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-        ("select" : rest) -> do
-            let tableName = extractTableName 1 rest
-            let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) input) (take (length rest - (length rest - getPosition tableName) - 1) rest)
-            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-            Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
-        _ -> Left "Not implemented: parseStatement"
+  if last input == ';'
+    then 
+      let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
+      in case words lowerCaseInput of
+          ["show", "tables"] -> Right (SQLStatement ShowTables)
+          ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
+          ("select" : rest) ->
+            if substringExists "from" lowerCaseInput 
+            then 
+                let tableName = extractTableName 1 rest
+                in
+                case countCommasInList rest of
+                    n | n == (getPosition tableName - 2) ->
+                        let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) input) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                            limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+                        in
+                        Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                    _ -> Left "Missing (,) after SELECT"
+            else
+                Left "Missing FROM clause"
+          _ -> Left "Not implemented: parseStatement"
+    else Left "Missing (;) after statement"
+
+substringExists :: String -> String -> Bool
+substringExists substring string = isInfixOf substring string
+
+countCommasInList :: [String] -> Int
+countCommasInList strings = sum $ map (length . filter (== ',')) strings
+
+removeCommas :: [String] -> [String]
+removeCommas = map removeComma
+  where
+    removeComma :: String -> String
+    removeComma str =
+        let reversedStr = reverse str
+            reversedStrWithoutCommas = dropWhile (== ',') reversedStr
+        in reverse reversedStrWithoutCommas
 
 extractTableName :: Int -> [String] -> (String, Int)
 extractTableName index ("from" : tableName : _) = (tableName, index)
@@ -235,16 +261,10 @@ selectFromTable tableName columns limits database =
            else
              let requestedColumns = filter (\(Column name _) -> name `elem` map getColumnName columns) tableColumns
                  selectedRows = map (\row -> filterRow row (getColumnsWithIndexes requestedColumns tableColumns)) tableRows
-             --in Right (applyAggregates (applyLimits (DataFrame requestedColumns selectedRows) limits) columns)
              in case applyLimits (DataFrame requestedColumns selectedRows) limits of
               Right dataFrame -> Right (applyAggregates dataFrame columns)
               Left errorMessage -> Left errorMessage
     Nothing -> Left "Table not found"
-
-filterColumns :: [Column] -> [String] -> [Column]
-filterColumns allColumns selectedColumns
-  | "*" `elem` selectedColumns = allColumns
-  | otherwise = filter (\(Column name _) -> name `elem` selectedColumns) allColumns
 
 getColumnsWithIndexes :: [Column] -> [Column] -> [(Int, Column)]
 getColumnsWithIndexes selectedColumns allColumns =
