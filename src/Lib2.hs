@@ -65,12 +65,9 @@ parseStatement input =
         ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
         ("select" : rest) -> do
             let tableName = extractTableName 1 rest
-            let columns = formColumnWithAggregateList input (take (length rest - (length rest - getPosition tableName) - 1) rest)
+            let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) input) (take (length rest - (length rest - getPosition tableName) - 1) rest)
             let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-            -- Commented part below extracts original column names from the input which helps to do CASE-SENSITIVE
-            -- comparisons later. It is commented now because column names were represented as list of strings but that
-            -- is not a case anymore. Column names will be CASE-INSENSITIVE untill we fix this
-            Right (SQLStatement (Select (extractSubstring input (getName tableName)) {-map (extractSubstring input) -} columns limits))
+            Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
         _ -> Left "Not implemented: parseStatement"
 
 extractTableName :: Int -> [String] -> (String, Int)
@@ -89,7 +86,7 @@ extractLimits input ("where" : rest) = extractLimits input rest
 extractLimits input ("or" : rest) = extractLimits input rest
 extractLimits input (columnName : "=" : value : rest) =
   let originalColumnName = extractSubstring input columnName
-  in Limit originalColumnName (getValueType value) : extractLimits input rest
+  in Limit originalColumnName (getValueType (extractSubstring input value)) : extractLimits input rest
 
 getValueType :: String -> Value
 getValueType value
