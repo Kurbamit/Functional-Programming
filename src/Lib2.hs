@@ -71,7 +71,7 @@ parseStatement input =
                 in
                 case countCommasInList rest of
                     n | n == (getPosition tableName - 2) ->
-                        let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) input) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                        let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
                             limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
                         in
                         Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
@@ -95,6 +95,9 @@ removeCommas = map removeComma
         let reversedStr = reverse str
             reversedStrWithoutCommas = dropWhile (== ',') reversedStr
         in reverse reversedStrWithoutCommas
+
+removeAllCommas :: String -> String
+removeAllCommas = filter (/= ',')
 
 extractTableName :: Int -> [String] -> (String, Int)
 extractTableName index ("from" : tableName : _) = (tableName, index)
