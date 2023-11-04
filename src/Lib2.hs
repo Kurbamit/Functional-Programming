@@ -24,6 +24,7 @@ import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
 import Data.List (find)
+import Data.List (nub)
 import GHC.Generics (D)
 
 
@@ -80,7 +81,10 @@ parseStatement input = do
                                     in case result of
                                         Right columns ->
                                             let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-                                            in Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                            in case limits of
+                                              Right limits ->
+                                                 Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                              Left errorMessage -> Left errorMessage
                                         Left errorMessage -> Left errorMessage
                                 n | n > (getPosition tableName - 2) -> Left "No column names were found (SELECT clause)"
                                 _ -> Left "Missing (,) after SELECT"
@@ -118,13 +122,22 @@ getName (name, _) = name
 getPosition :: (String, Int) -> Int
 getPosition (_, position) = position
 
-extractLimits :: String -> [String] -> [Limit]
-extractLimits _ [] = []
+extractLimits :: String -> [String] -> Either ErrorMessage [Limit]
+extractLimits _ [] = Right []  -- Empty list is a valid case, so return Right
 extractLimits input ("where" : rest) = extractLimits input rest
 extractLimits input ("or" : rest) = extractLimits input rest
-extractLimits input (columnName : "=" : value : rest) =
-  let originalColumnName = extractSubstring input columnName
-  in Limit originalColumnName (getValueType (extractSubstring input value)) : extractLimits input rest
+extractLimits input (columnName : equalitySign : value : rest)
+  | validateEqualitySign equalitySign = do
+    let originalColumnName = extractSubstring input columnName
+    let valueType = getValueType (extractSubstring input value)
+    restLimits <- extractLimits input rest
+    return (Limit originalColumnName valueType : restLimits)
+  | otherwise = Left "'=' was not found"
+
+
+validateEqualitySign :: String -> Bool
+validateEqualitySign "=" = True;
+validateEqualitySign _ = False;
 
 getValueType :: String -> Value
 getValueType value
@@ -252,7 +265,7 @@ applyLimits :: DataFrame -> [Limit] -> Either ErrorMessage DataFrame
 applyLimits (DataFrame tableColumns tableRows) [] = Right (DataFrame tableColumns tableRows)
 applyLimits (DataFrame tableColumns tableRows) limits =
   if allColumnNamesExistInDataFrame (extractNamesFromLimits limits) tableColumns
-    then Right (DataFrame tableColumns filteredRows)
+    then Right (DataFrame tableColumns (nub filteredRows))
     else Left ("Column(s) not found (WHERE clause)")
   where
       filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
