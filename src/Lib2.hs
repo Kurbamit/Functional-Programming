@@ -68,8 +68,7 @@ parseStatement input =
             if substringExists "from" lowerCaseInput 
             then 
                 let tableName = extractTableName 1 rest
-                in
-                case countCommasInList rest of
+                in case countCommasInList rest of
                     n | n == (getPosition tableName - 2) ->
                         let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
                             limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
@@ -253,8 +252,9 @@ selectFromTable tableName columns limits database =
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
       then
-        let selectedRows = map (\row -> filterRow row (getColumnsWithIndexes tableColumns tableColumns)) tableRows
-        in Right (DataFrame tableColumns selectedRows)
+        case applyLimits (DataFrame tableColumns tableRows) limits of 
+          Right dataframe -> Right (applyAggregates dataframe columns)
+          Left errorMessage -> Left errorMessage
       else
         let columnNames = [name | Column name _ <- tableColumns]  -- Extract column names
             nonExistentColumns = filter (`notElem` columnNames)  (map getColumnName columns)
