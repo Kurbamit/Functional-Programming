@@ -15,7 +15,7 @@ module Lib2
 where
 
 import Data.Char
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, isJust)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
 import InMemoryTables (TableName, database)
@@ -59,28 +59,30 @@ columnNamesToRows = map (\(Column name _) -> [StringValue name])
 -- Parses user input into an entity representing a parsed
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement input =
-  if last input == ';'
-    then 
-      let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
-      in case words lowerCaseInput of
-          ["show", "tables"] -> Right (SQLStatement ShowTables)
-          ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-          ("select" : rest) ->
-            if substringExists "from" lowerCaseInput 
-            then 
-                let tableName = extractTableName 1 rest
-                in case countCommasInList rest of
-                    n | n == (getPosition tableName - 2) ->
-                        let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
-                            limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-                        in
-                        Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
-                    _ -> Left "Missing (,) after SELECT"
-            else
-                Left "Missing FROM clause"
-          _ -> Left "Not implemented: parseStatement"
-    else Left "Missing (;) after statement"
+parseStatement input = do
+    if last input == ';'
+        then do
+            let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
+            case words lowerCaseInput of
+                ["show", "tables"] -> Right (SQLStatement ShowTables)
+                ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
+                ("select" : rest) ->
+                    if substringExists "from" lowerCaseInput 
+                    then do
+                        let tableName = extractTableName 1 rest
+                        case countCommasInList rest of
+                            n | n == (getPosition tableName - 2) ->
+                                let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                                in case result of
+                                    Right columns ->
+                                        let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+                                        in Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                    Left errorMessage -> Left errorMessage
+                            _ -> Left "Missing (,) after SELECT"
+                    else
+                        Left "Missing FROM clause"
+                _ -> Left "Not implemented: parseStatement"
+        else Left "Missing (;) after statement"
 
 substringExists :: String -> String -> Bool
 substringExists substring string = isInfixOf substring string
@@ -126,8 +128,17 @@ getValueType value
   | null value || all isSpace value = NullValue
   | otherwise = StringValue value
 
-formColumnWithAggregateList :: String -> [String] -> [ColumnWithAggregate]
-formColumnWithAggregateList input inputWords = map (\word -> extractNameFromAggregate input word) inputWords
+formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
+formColumnWithAggregateList input inputWords = do
+    let columnAggregates = map (extractNameFromAggregate input) inputWords
+    checkMultipleAggregates columnAggregates
+
+checkMultipleAggregates :: [ColumnWithAggregate] -> Either ErrorMessage [ColumnWithAggregate]
+checkMultipleAggregates columns =
+    let aggregates = filter (\(ColumnWithAggregate _ maybeAgg) -> isJust maybeAgg) columns
+    in if length aggregates > 1
+        then Left "Multiple aggregate functions for a single column are not allowed."
+        else Right columns
 
 extractNameFromAggregate :: String -> String -> ColumnWithAggregate
 extractNameFromAggregate input word
