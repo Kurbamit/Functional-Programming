@@ -78,6 +78,7 @@ parseStatement input = do
                                         let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
                                         in Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
                                     Left errorMessage -> Left errorMessage
+                            n | n > (getPosition tableName - 2) -> Left "No specified columns were found."
                             _ -> Left "Missing (,) after SELECT"
                     else
                         Left "Missing FROM clause"
@@ -103,6 +104,7 @@ removeAllCommas :: String -> String
 removeAllCommas = filter (/= ',')
 
 extractTableName :: Int -> [String] -> (String, Int)
+extractTableName index [] = ("", index)
 extractTableName index ("from" : tableName : _) = (tableName, index)
 extractTableName index (_ : columns) = extractTableName (index + 1) columns
 
@@ -129,6 +131,7 @@ getValueType value
   | otherwise = StringValue value
 
 formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
+formColumnWithAggregateList _ [] = Left "No specified columns are found in SELECT clause"
 formColumnWithAggregateList input inputWords = do
     let columnAggregates = map (extractNameFromAggregate input) inputWords
     checkMultipleAggregates columnAggregates
@@ -137,7 +140,7 @@ checkMultipleAggregates :: [ColumnWithAggregate] -> Either ErrorMessage [ColumnW
 checkMultipleAggregates columns =
     let aggregates = filter (\(ColumnWithAggregate _ maybeAgg) -> isJust maybeAgg) columns
     in if length aggregates > 1
-        then Left "Multiple aggregate functions for a single column are not allowed."
+        then Left "Multiple aggregate functions are not allowed."
         else Right columns
 
 extractNameFromAggregate :: String -> String -> ColumnWithAggregate
