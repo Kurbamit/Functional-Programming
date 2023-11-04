@@ -5,7 +5,9 @@ module Lib2
   ( parseStatement,
     executeStatement,
     runSql,
-    ColumnWithAggregate,
+    ColumnWithAggregate (..),
+    Aggregate (..),
+    Limit (..),
     columnNamesToRows,
     ParsedStatement (..),
     SQLCommand (..)
@@ -13,7 +15,7 @@ module Lib2
 where
 
 import Data.Char
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, isJust)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
 import InMemoryTables (TableName, database)
@@ -22,6 +24,7 @@ import Data.List (elemIndex)
 import Data.List (isInfixOf)
 import Data.List (sum)
 import Data.List (find)
+import Data.List (nub)
 import GHC.Generics (D)
 
 
@@ -57,29 +60,38 @@ columnNamesToRows = map (\(Column name _) -> [StringValue name])
 -- Parses user input into an entity representing a parsed
 -- statement
 parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement input =
-  if last input == ';'
-    then 
-      let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
-      in case words lowerCaseInput of
-          ["show", "tables"] -> Right (SQLStatement ShowTables)
-          ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-          ("select" : rest) ->
-            if substringExists "from" lowerCaseInput 
-            then 
-                let tableName = extractTableName 1 rest
-                in
-                case countCommasInList rest of
-                    n | n == (getPosition tableName - 2) ->
-                        let columns = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
-                            limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-                        in
-                        Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
-                    _ -> Left "Missing (,) after SELECT"
-            else
-                Left "Missing FROM clause"
-          _ -> Left "Not implemented: parseStatement"
-    else Left "Missing (;) after statement"
+parseStatement input = do
+    if last input == ';'
+        then do
+            let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
+            case words lowerCaseInput of
+                ["show", "tables"] -> Right (SQLStatement ShowTables)
+                ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
+                ("select" : rest) ->
+                    if substringExists "from" lowerCaseInput 
+                    then do
+                        let tableName = extractTableName 1 rest
+                          in if length (getName tableName) == 0
+                          then 
+                            Left "Table not found"
+                          else
+                            case countCommasInList rest of
+                                n | n == (getPosition tableName - 2) ->
+                                    let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                                    in case result of
+                                        Right columns ->
+                                            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+                                            in case limits of
+                                              Right limits ->
+                                                 Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                              Left errorMessage -> Left errorMessage
+                                        Left errorMessage -> Left errorMessage
+                                n | n > (getPosition tableName - 2) -> Left "No column names were found (SELECT clause)"
+                                _ -> Left "Missing (,) after SELECT"
+                    else
+                        Left "Missing FROM clause"
+                _ -> Left "Not implemented: parseStatement"
+        else Left "Missing (;) after statement"
 
 substringExists :: String -> String -> Bool
 substringExists substring string = isInfixOf substring string
@@ -100,6 +112,7 @@ removeAllCommas :: String -> String
 removeAllCommas = filter (/= ',')
 
 extractTableName :: Int -> [String] -> (String, Int)
+extractTableName index [] = ("", index)
 extractTableName index ("from" : tableName : _) = (tableName, index)
 extractTableName index (_ : columns) = extractTableName (index + 1) columns
 
@@ -109,13 +122,22 @@ getName (name, _) = name
 getPosition :: (String, Int) -> Int
 getPosition (_, position) = position
 
-extractLimits :: String -> [String] -> [Limit]
-extractLimits _ [] = []
+extractLimits :: String -> [String] -> Either ErrorMessage [Limit]
+extractLimits _ [] = Right []  -- Empty list is a valid case, so return Right
 extractLimits input ("where" : rest) = extractLimits input rest
 extractLimits input ("or" : rest) = extractLimits input rest
-extractLimits input (columnName : "=" : value : rest) =
-  let originalColumnName = extractSubstring input columnName
-  in Limit originalColumnName (getValueType (extractSubstring input value)) : extractLimits input rest
+extractLimits input (columnName : equalitySign : value : rest)
+  | validateEqualitySign equalitySign = do
+    let originalColumnName = extractSubstring input columnName
+    let valueType = getValueType (extractSubstring input value)
+    restLimits <- extractLimits input rest
+    return (Limit originalColumnName valueType : restLimits)
+  | otherwise = Left "'=' was not found"
+
+
+validateEqualitySign :: String -> Bool
+validateEqualitySign "=" = True;
+validateEqualitySign _ = False;
 
 getValueType :: String -> Value
 getValueType value
@@ -125,8 +147,18 @@ getValueType value
   | null value || all isSpace value = NullValue
   | otherwise = StringValue value
 
-formColumnWithAggregateList :: String -> [String] -> [ColumnWithAggregate]
-formColumnWithAggregateList input inputWords = map (\word -> extractNameFromAggregate input word) inputWords
+formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
+formColumnWithAggregateList _ [] = Left "No column names were found (SELECT clause)"
+formColumnWithAggregateList input inputWords = do
+    let columnAggregates = map (extractNameFromAggregate input) inputWords
+    checkMultipleAggregates columnAggregates
+
+checkMultipleAggregates :: [ColumnWithAggregate] -> Either ErrorMessage [ColumnWithAggregate]
+checkMultipleAggregates columns =
+    let aggregates = filter (\(ColumnWithAggregate _ maybeAgg) -> isJust maybeAgg) columns
+    in if length aggregates > 1
+        then Left "Multiple aggregate functions are not allowed."
+        else Right columns
 
 extractNameFromAggregate :: String -> String -> ColumnWithAggregate
 extractNameFromAggregate input word
@@ -233,7 +265,7 @@ applyLimits :: DataFrame -> [Limit] -> Either ErrorMessage DataFrame
 applyLimits (DataFrame tableColumns tableRows) [] = Right (DataFrame tableColumns tableRows)
 applyLimits (DataFrame tableColumns tableRows) limits =
   if allColumnNamesExistInDataFrame (extractNamesFromLimits limits) tableColumns
-    then Right (DataFrame tableColumns filteredRows)
+    then Right (DataFrame tableColumns (nub filteredRows))
     else Left ("Column(s) not found (WHERE clause)")
   where
       filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
@@ -253,8 +285,9 @@ selectFromTable tableName columns limits database =
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
       then
-        let selectedRows = map (\row -> filterRow row (getColumnsWithIndexes tableColumns tableColumns)) tableRows
-        in Right (DataFrame tableColumns selectedRows)
+        case applyLimits (DataFrame tableColumns tableRows) limits of 
+          Right dataframe -> Right (applyAggregates dataframe columns)
+          Left errorMessage -> Left errorMessage
       else
         let columnNames = [name | Column name _ <- tableColumns]  -- Extract column names
             nonExistentColumns = filter (`notElem` columnNames)  (map getColumnName columns)
