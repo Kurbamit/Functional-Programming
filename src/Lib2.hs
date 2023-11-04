@@ -70,16 +70,20 @@ parseStatement input = do
                     if substringExists "from" lowerCaseInput 
                     then do
                         let tableName = extractTableName 1 rest
-                        case countCommasInList rest of
-                            n | n == (getPosition tableName - 2) ->
-                                let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
-                                in case result of
-                                    Right columns ->
-                                        let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
-                                        in Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
-                                    Left errorMessage -> Left errorMessage
-                            n | n > (getPosition tableName - 2) -> Left "No specified columns were found."
-                            _ -> Left "Missing (,) after SELECT"
+                          in if length (getName tableName) == 0
+                          then 
+                            Left "Table not found"
+                          else
+                            case countCommasInList rest of
+                                n | n == (getPosition tableName - 2) ->
+                                    let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                                    in case result of
+                                        Right columns ->
+                                            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+                                            in Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                        Left errorMessage -> Left errorMessage
+                                n | n > (getPosition tableName - 2) -> Left "No column names were found (SELECT clause)"
+                                _ -> Left "Missing (,) after SELECT"
                     else
                         Left "Missing FROM clause"
                 _ -> Left "Not implemented: parseStatement"
@@ -131,7 +135,7 @@ getValueType value
   | otherwise = StringValue value
 
 formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
-formColumnWithAggregateList _ [] = Left "No specified columns are found in SELECT clause"
+formColumnWithAggregateList _ [] = Left "No column names were found (SELECT clause)"
 formColumnWithAggregateList input inputWords = do
     let columnAggregates = map (extractNameFromAggregate input) inputWords
     checkMultipleAggregates columnAggregates
