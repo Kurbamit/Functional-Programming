@@ -37,17 +37,17 @@ main = hspec $ do
 
   describe "Lib2.parseStatement" $ do
     it "parses a 'SHOW TABLES;' statement" $ do
-      Lib2.parseStatement "SHOW TABLES;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SHOW TABLES;" `shouldBe` (parseStatementTestCase "SHOW TABLES")
     it "parses a 'SHOW TABLES;' statement case insensitively" $ do
-      Lib2.parseStatement "ShOw TaBlEs;" `shouldSatisfy` isRight
+      Lib2.parseStatement "ShOw TaBlEs;" `shouldBe` (parseStatementTestCase "SHOW TABLES")
     it "parser does not parse a 'SHOW TABLES' statement if (;) is missing" $ do
       Lib2.parseStatement "SHOW TABLES" `shouldSatisfy` isLeft
     it "parses a 'SHOW TABLE' statement" $ do
-      Lib2.parseStatement "SHOW TABLE employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SHOW TABLE employees;" `shouldBe` (parseStatementTestCase "SHOW TABLE")
     it "parses 'SELECT *' and return all column names from specified table" $ do
-      Lib2.parseStatement "SELECT * FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT * FROM employees;" `shouldBe` (parseStatementTestCase "SELECT *")
     it "parses multiple columns from table" $ do
-      Lib2.parseStatement "SELECT id, name FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT id, name FROM employees;" `shouldBe` (parseStatementTestCase "SELECT id, name")
     it "parser does not parse invalid 'SELECT' statement" $ do
       Lib2.parseStatement "SELEC id FROM employees;" `shouldSatisfy` isLeft
     it "parser does not parse a 'SELECT' statement if (;) is missing" $ do
@@ -55,21 +55,21 @@ main = hspec $ do
     it "parser does not parse a 'SELECT' statement if (,) is missing in column list" $ do
       Lib2.parseStatement "SELECT id name FROM employees;" `shouldSatisfy` isLeft
     it "parses 'MAX()' function" $ do
-      Lib2.parseStatement "SELECT max(id) FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT max(id) FROM employees;" `shouldBe` (parseStatementTestCase "AGGREGATE MAX()")
     it "'MAX()' function is case-insensitive" $ do
-      Lib2.parseStatement "SELECT MAX(id) FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT MAX(id) FROM employees;" `shouldBe` (parseStatementTestCase "AGGREGATE MAX()")
     it "parses 'SUM()' function" $ do
-      Lib2.parseStatement "SELECT sum(id) FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT sum(id) FROM employees;" `shouldBe` (parseStatementTestCase "AGGREGATE SUM()")
     it "'SUM()' function is case-insensitive" $ do
-      Lib2.parseStatement "SELECT SUM(id) FROM employees;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT SUM(id) FROM employees;" `shouldBe` (parseStatementTestCase "AGGREGATE SUM()")
     it "parses WHERE statement with strings" $ do
-      Lib2.parseStatement "SELECT name FROM employees WHERE name = Vi;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT name FROM employees WHERE name = Vi;" `shouldBe` (parseStatementTestCase "BASIC WHERE STRING")
     it "parses WHERE statement with numbers" $ do
-      Lib2.parseStatement "SELECT id FROM employees WHERE id = 1;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT id FROM employees WHERE id = 1;" `shouldBe` (parseStatementTestCase "BASIC WHERE INT")
     it "parses WHERE statement with boolean values" $ do
-      Lib2.parseStatement "SELECT flag, value FROM flags WHERE value = True;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT flag, value FROM flags WHERE value = True;" `shouldBe` (parseStatementTestCase "WHERE TRUE")
     it "parses WHERE statement with OR" $ do
-      Lib2.parseStatement "SELECT id, name FROM employees WHERE id = 1 OR name = Ed;" `shouldSatisfy` isRight
+      Lib2.parseStatement "SELECT id, name FROM employees WHERE id = 1 OR name = Ed;" `shouldBe` (parseStatementTestCase "WHERE OR")
 
   describe "Lib2.executeStatement" $ do
     it "executes a 'SHOW TABLES;' statement" $ do
@@ -188,3 +188,17 @@ whereTestResult2 = DataFrame [Column "id" IntegerType, Column "surname" StringTy
                              [  [IntegerValue 1, StringValue "Po"], 
                                 [IntegerValue 2, StringValue "Dl"] 
                              ]
+
+type ErrorMessage = String
+
+parseStatementTestCase :: String -> Either ErrorMessage ParsedStatement
+parseStatementTestCase "SHOW TABLES" = Right (SQLStatement ShowTables)
+parseStatementTestCase "SHOW TABLE" = Right (SQLStatement (ShowTableColumns "employees"))
+parseStatementTestCase "SELECT *" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "*" Nothing] []))
+parseStatementTestCase "SELECT id, name" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] []))
+parseStatementTestCase "AGGREGATE MAX()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Max)] []))
+parseStatementTestCase "AGGREGATE SUM()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Sum)] []))
+parseStatementTestCase "BASIC WHERE STRING" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "name" Nothing] [Limit "name" (StringValue "Vi")]))
+parseStatementTestCase "BASIC WHERE INT" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing] [Limit "id" (IntegerValue 1)]))
+parseStatementTestCase "WHERE TRUE" = Right (SQLStatement (Select "flags" [ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] [Limit "value" (BoolValue True)]))
+parseStatementTestCase "WHERE OR" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] [Limit "id" (IntegerValue 1), Limit "name" (StringValue "Ed")]))

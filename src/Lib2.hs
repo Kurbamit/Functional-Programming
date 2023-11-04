@@ -5,7 +5,9 @@ module Lib2
   ( parseStatement,
     executeStatement,
     runSql,
-    ColumnWithAggregate,
+    ColumnWithAggregate (..),
+    Aggregate (..),
+    Limit (..),
     columnNamesToRows,
     ParsedStatement (..),
     SQLCommand (..)
