@@ -286,7 +286,7 @@ selectFromTable tableName columns limits database =
       if "*" `elem` map getColumnName columns
       then
         case applyLimits (DataFrame tableColumns tableRows) limits of 
-          Right dataframe -> Right (applyAggregates dataframe columns)
+          Right dataframe -> Right dataframe
           Left errorMessage -> Left errorMessage
       else
         let columnNames = [name | Column name _ <- tableColumns]  -- Extract column names
