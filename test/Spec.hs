@@ -5,6 +5,7 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
+import Lib2 (ColumnWithAggregate(ColumnWithAggregate))
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -73,7 +74,7 @@ main = hspec $ do
 
   describe "Lib2.executeStatement" $ do
     it "executes a 'SHOW TABLES;' statement" $ do
-      case Lib2.parseStatement "SHOW TABLES;" of 
+      case parseStatementTestCase "SHOW TABLES" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
     it "executes a 'SHOW TABLES;' case insensitively" $ do
@@ -81,7 +82,7 @@ main = hspec $ do
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
     it "executes a 'SHOW TABLE employees;' statement" $ do
-      case Lib2.parseStatement "SHOW TABLE employees;" of 
+      case parseStatementTestCase "SHOW TABLE" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableTestResult
     it "executes a 'SHOW TABLE employees;' statement case insensitively" $ do
@@ -93,7 +94,7 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes a 'SELECT' statement with multiple columns" $ do
-      case Lib2.parseStatement "SELECT id, surname FROM employees;" of 
+      case parseStatementTestCase "SELECT id, name" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right selectTestResult
     it "does not execute a 'SELECT' statement with case-mismatching table name" $ do
@@ -109,11 +110,11 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes a 'MAX' function with integer" $ do
-      case Lib2.parseStatement "SELECT MAX(id) FROM employees;" of 
+      case parseStatementTestCase "AGGREGATE MAX()" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult1
     it "executes a 'MAX' function with string" $ do
-      case Lib2.parseStatement "SELECT MAX(name) FROM employees;" of 
+      case parseStatementTestCase "AGGREGATE MAX(String)" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult2
     it "does not execute a 'MAX' function with case-mismatching column name" $ do
@@ -121,7 +122,7 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes a 'SUM' function" $ do
-      case Lib2.parseStatement "SELECT SUM(id) FROM employees;" of 
+      case parseStatementTestCase "AGGREGATE SUM()" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right sumTestResult
     it "does not execute a 'SUM' function with case-mismatching column name" $ do
@@ -129,7 +130,7 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes 'WHERE' statement" $ do
-      case Lib2.parseStatement "SELECT id, name FROM employees WHERE id = 1;" of 
+      case parseStatementTestCase "BASIC WHERE INT 2" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult1
     it "does not execute 'WHERE' statement with case-mismatching column name" $ do
@@ -137,7 +138,7 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes 'WHERE OR' statement" $ do
-      case Lib2.parseStatement "SELECT id, surname FROM employees WHERE id = 1 OR surname = Dl;" of 
+      case parseStatementTestCase "WHERE OR 2" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult2
 
@@ -163,9 +164,9 @@ showTableTestResult = DataFrame
 
 selectTestResult :: DataFrame
 selectTestResult = DataFrame
-  [Column "id" IntegerType, Column "surname" StringType]
-  [ [IntegerValue 1, StringValue "Po"],
-    [IntegerValue 2, StringValue "Dl"]
+  [Column "id" IntegerType, Column "name" StringType]
+  [ [IntegerValue 1, StringValue "Vi"],
+    [IntegerValue 2, StringValue "Ed"]
   ]
 
 maxTestResult1 :: DataFrame
@@ -197,8 +198,11 @@ parseStatementTestCase "SHOW TABLE" = Right (SQLStatement (ShowTableColumns "emp
 parseStatementTestCase "SELECT *" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "*" Nothing] []))
 parseStatementTestCase "SELECT id, name" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] []))
 parseStatementTestCase "AGGREGATE MAX()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Max)] []))
+parseStatementTestCase "AGGREGATE MAX(String)" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "name" (Just Max)] []))
 parseStatementTestCase "AGGREGATE SUM()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Sum)] []))
 parseStatementTestCase "BASIC WHERE STRING" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "name" Nothing] [Limit "name" (StringValue "Vi")]))
 parseStatementTestCase "BASIC WHERE INT" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing] [Limit "id" (IntegerValue 1)]))
+parseStatementTestCase "BASIC WHERE INT 2" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] [Limit "id" (IntegerValue 1)]))
 parseStatementTestCase "WHERE TRUE" = Right (SQLStatement (Select "flags" [ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] [Limit "value" (BoolValue True)]))
 parseStatementTestCase "WHERE OR" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] [Limit "id" (IntegerValue 1), Limit "name" (StringValue "Ed")]))
+parseStatementTestCase "WHERE OR 2" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "surname" Nothing] [Limit "id" (IntegerValue 1), Limit "surname" (StringValue "Dl")]))
