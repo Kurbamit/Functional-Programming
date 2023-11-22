@@ -10,6 +10,7 @@ where
 import Control.Monad.Free (Free (..), liftF)
 import DataFrame (DataFrame)
 import Data.Time ( UTCTime )
+import Lib2
 
 type TableName = String
 type FileContent = String
@@ -31,4 +32,9 @@ getTime = liftF $ GetTime id
 
 executeSql :: String -> Execution (Either ErrorMessage DataFrame)
 executeSql sql = do
-    return $ Left "implement me"
+    case parseStatement sql of
+        Left errorMessage -> return $ Left errorMessage
+        Right parsedStatement -> do
+            case executeStatement parsedStatement of
+                Left errorMessage -> return $ Left errorMessage
+                Right result -> return $ Right result
