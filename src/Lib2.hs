@@ -26,6 +26,8 @@ import Data.List (sum)
 import Data.List (find)
 import Data.List (nub)
 import GHC.Generics (D)
+import Control.Monad.Trans.Error (Error)
+import Data.List (foldl')
 
 
 type ErrorMessage = String
@@ -38,7 +40,7 @@ data ParsedStatement = SQLStatement SQLCommand
 data SQLCommand
   = ShowTables
   | ShowTableColumns TableName -- Add a new constructor for showing table columns
-  | Select TableName [ColumnWithAggregate] [Limit]
+  | Select [TableName] [ColumnWithAggregate] [Limit]
   -- Define additional SQL commands like SUM, MIN, MAX here
   deriving (Show, Eq)
 
@@ -70,28 +72,34 @@ parseStatement input = do
                 ("select" : rest) ->
                     if substringExists "from" lowerCaseInput 
                     then do
-                        let tableName = extractTableName 1 rest
-                          in if length (getName tableName) == 0
+                      let tableNames = extractTableNames 1 rest
+                        in if null (getNames tableNames)
                           then 
                             Left "Table not found"
                           else
                             case countCommasInList rest of
-                                n | n == (getPosition tableName - 2) ->
-                                    let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableName) - 1) rest))
+                                n | n == (getPosition tableNames - 2) ->
+                                    let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableNames) - 1) rest))
                                     in case result of
                                         Right columns ->
-                                            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableName - 1) (drop (getPosition tableName + 1) rest))
+                                            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableNames - 1) (drop (findWherePosition rest) rest))
                                             in case limits of
                                               Right limits ->
-                                                 Right (SQLStatement (Select (extractSubstring input (getName tableName)) columns limits))
+                                                 Right (SQLStatement (Select (map (\tableName -> extractSubstring input tableName) (take (findWherePosition (getNames tableNames)) (getNames tableNames))) columns limits))
                                               Left errorMessage -> Left errorMessage
                                         Left errorMessage -> Left errorMessage
-                                n | n > (getPosition tableName - 2) -> Left "No column names were found (SELECT clause)"
+                                n | n > (getPosition tableNames - 2) -> Left "No column names were found (SELECT clause)"
                                 _ -> Left "Missing (,) after SELECT"
                     else
                         Left "Missing FROM clause"
                 _ -> Left "Not implemented: parseStatement"
         else Left "Missing (;) after statement"
+
+findWherePosition :: [String] -> Int
+findWherePosition rest =
+  case span (/= "where") rest of
+    (_, [])   -> length rest
+    (beforeWhere, _) -> length beforeWhere 
 
 substringExists :: String -> String -> Bool
 substringExists substring string = isInfixOf substring string
@@ -111,15 +119,15 @@ removeCommas = map removeComma
 removeAllCommas :: String -> String
 removeAllCommas = filter (/= ',')
 
-extractTableName :: Int -> [String] -> (String, Int)
-extractTableName index [] = ("", index)
-extractTableName index ("from" : tableName : _) = (tableName, index)
-extractTableName index (_ : columns) = extractTableName (index + 1) columns
+extractTableNames :: Int -> [String] -> ([String], Int)
+extractTableNames index [] = ([], index)
+extractTableNames index ("from" : tableName : rest) = (tableName : rest, index)
+extractTableNames index (_ : columns) = extractTableNames (index + 1) columns
 
-getName :: (String, Int) -> String
-getName (name, _) = name
+getNames :: ([String], Int) -> [String]
+getNames (names, _) = names
 
-getPosition :: (String, Int) -> Int
+getPosition :: ([String], Int) -> Int
 getPosition (_, position) = position
 
 extractLimits :: String -> [String] -> Either ErrorMessage [Limit]
@@ -311,6 +319,52 @@ getColumnsWithIndexes selectedColumns allColumns =
 filterRow :: Row -> [(Int, Column)] -> Row
 filterRow row selectedColumns = [row !! index | (index, _) <- selectedColumns]
 
+selectMultipleTables :: [TableName] -> [ColumnWithAggregate] -> [Limit] -> [Either ErrorMessage DataFrame]
+selectMultipleTables tableNames columns limits =
+  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) limits database) tableNames
+
+filterTableColumns :: String -> [ColumnWithAggregate] -> [ColumnWithAggregate]
+filterTableColumns tableName columns =
+  case findTable tableName database of
+    Just (DataFrame tableColumns _) ->
+      case columns of
+        (column : rest) ->
+          if getColumnName column == "*"
+            then columns
+            else filter (\col -> getColumnName col `elem` map extractColumnName tableColumns) columns
+  where
+    extractColumnName :: Column -> String
+    extractColumnName (Column name _) = name
+
+combineDataFrames :: [Either ErrorMessage DataFrame] -> Either ErrorMessage DataFrame
+combineDataFrames dataFrames =
+  case sequence dataFrames of
+  Left errorMessage -> Left errorMessage
+  Right frames ->
+      case foldr (\dataframe acc -> acc >>= \acc' -> join dataframe acc') (Right emptyDataFrame) frames of
+        Left errorMessage -> Left errorMessage
+        Right dataframe -> Right dataframe
+
+emptyDataFrame :: DataFrame
+emptyDataFrame = DataFrame [] [[]]
+
+join :: DataFrame -> DataFrame -> Either ErrorMessage DataFrame
+join (DataFrame cols1 rows1) (DataFrame cols2 rows2) = do
+  combinedCols <- combineColumns cols1 cols2
+  combinedRows <- combineRows rows1 rows2
+  return (DataFrame combinedCols combinedRows)
+
+combineColumns :: [Column] -> [Column] -> Either ErrorMessage [Column]
+combineColumns cols1 cols2
+  | hasCommonColumns cols1 cols2 = Left "Columns in both DataFrames have the same names"
+  | otherwise = Right $ cols1 ++ cols2
+
+hasCommonColumns :: [Column] -> [Column] -> Bool
+hasCommonColumns cols1 cols2 = any (\(Column name1 _) -> any (\(Column name2 _) -> name1 == name2) cols2) cols1
+
+combineRows :: [Row] -> [Row] -> Either ErrorMessage [Row]
+combineRows rows1 rows2 = Right [v1 ++ v2 | v1 <- rows1, v2 <- rows2]
+
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
 executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
@@ -319,7 +373,7 @@ executeStatement (SQLStatement command) = case command of
   ShowTableColumns tableName -> case findTable tableName database of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
-  Select tableName columns limits -> selectFromTable tableName columns limits database
+  Select tableNames columns limits -> combineDataFrames (selectMultipleTables tableNames columns limits)
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
