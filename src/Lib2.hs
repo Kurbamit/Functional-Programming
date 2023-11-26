@@ -273,7 +273,7 @@ applyLimits :: DataFrame -> [Limit] -> Either ErrorMessage DataFrame
 applyLimits (DataFrame tableColumns tableRows) [] = Right (DataFrame tableColumns tableRows)
 applyLimits (DataFrame tableColumns tableRows) limits =
   if allColumnNamesExistInDataFrame (extractNamesFromLimits limits) tableColumns
-    then Right (DataFrame tableColumns (nub filteredRows))
+    then Right (DataFrame tableColumns (filteredRows))
     else Left ("Column(s) not found (WHERE clause)")
   where
       filteredRows = concatMap (\limit -> applyLimit limit tableRows) limits
@@ -286,6 +286,9 @@ allColumnNamesExistInDataFrame columnNames columns = all (\columnName -> any (\(
 
 extractNamesFromLimits :: [Limit] -> [String]
 extractNamesFromLimits limits = [name | Limit name _ <- limits]
+
+extractNameFromLimit :: Limit -> String
+extractNameFromLimit (Limit name _) = name
 
 selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
 selectFromTable tableName columns limits database =
@@ -321,7 +324,7 @@ filterRow row selectedColumns = [row !! index | (index, _) <- selectedColumns]
 
 selectMultipleTables :: [TableName] -> [ColumnWithAggregate] -> [Limit] -> [Either ErrorMessage DataFrame]
 selectMultipleTables tableNames columns limits =
-  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) limits database) tableNames
+  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) (filterTableLimits tableName limits) database) tableNames
 
 filterTableColumns :: String -> [ColumnWithAggregate] -> [ColumnWithAggregate]
 filterTableColumns tableName columns =
@@ -332,9 +335,15 @@ filterTableColumns tableName columns =
           if getColumnName column == "*"
             then columns
             else filter (\col -> getColumnName col `elem` map extractColumnName tableColumns) columns
-  where
-    extractColumnName :: Column -> String
-    extractColumnName (Column name _) = name
+
+extractColumnName :: Column -> String
+extractColumnName (Column name _) = name
+
+filterTableLimits :: String -> [Limit] -> [Limit]
+filterTableLimits tableName limits =
+  case findTable tableName database of
+    Just (DataFrame tableColumns _) ->
+      filter (\limit -> extractNameFromLimit limit `elem` map extractColumnName tableColumns) limits
 
 combineDataFrames :: [Either ErrorMessage DataFrame] -> Either ErrorMessage DataFrame
 combineDataFrames dataFrames =
