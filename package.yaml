@@ -41,6 +41,10 @@ library:
   dependencies:
   - free
   - time
+  - bytestring
+  - text
+  - aeson-pretty
+  - aeson
   - transformers
 
 executables:
