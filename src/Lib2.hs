@@ -2,7 +2,8 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module Lib2
-  ( parseStatement,
+  (
+    parseStatement,
     executeStatement,
     runSql,
     ColumnWithAggregate (..),
@@ -10,12 +11,12 @@ module Lib2
     Limit (..),
     columnNamesToRows,
     ParsedStatement (..),
-    SQLCommand (..)
+    -- SQLCommand (..)
   )
 where
 
 import Data.Char
-import Data.Maybe (listToMaybe, isJust)
+import Data.Maybe (listToMaybe, isJust, fromMaybe)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
 import InMemoryTables (TableName, database)
@@ -28,21 +29,26 @@ import Data.List (nub)
 import GHC.Generics (D)
 import Control.Monad.Trans.Error (Error)
 import Data.List (foldl')
+import Text.ParserCombinators.ReadP (string, sepBy, char, option)
+import Data.Char (isSpace)
+import GHC.Event.Windows (withException)
+import GHC.OldList (dropWhileEnd)
+import Control.Alternative.Free
 
 
 type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
 
 -- Keep the type, modify constructors
-data ParsedStatement = SQLStatement SQLCommand
-  deriving (Show, Eq)
+-- data ParsedStatement = SQLStatement SQLCommand
+--   deriving (Show, Eq)
 
-data SQLCommand
-  = ShowTables
-  | ShowTableColumns TableName -- Add a new constructor for showing table columns
-  | Select [TableName] [ColumnWithAggregate] [Limit]
-  -- Define additional SQL commands like SUM, MIN, MAX here
-  deriving (Show, Eq)
+-- data SQLCommand
+--   = ShowTables
+--   | ShowTableColumns TableName -- Add a new constructor for showing table columns
+--   | Select [TableName] [ColumnWithAggregate] [Limit]
+--   -- Define additional SQL commands like SUM, MIN, MAX here
+--   deriving (Show, Eq)
 
 data ColumnWithAggregate = ColumnWithAggregate String (Maybe Aggregate)
   deriving (Show, Eq)
@@ -55,97 +61,144 @@ data Aggregate
 data Limit = Limit String Value
   deriving (Show, Eq)
 
--- -- Helper function for testing purpose to convert a list of Column into rows of Value
-columnNamesToRows :: [Column] -> [Row]
-columnNamesToRows = map (\(Column name _) -> [StringValue name])
+data ParsedStatement
+  = ShowTables {}
+  | ShowTable TableName
+  | Select [ColumnWithAggregate] [TableName] [Limit]
+    deriving (Show, Eq)
 
--- Parses user input into an entity representing a parsed
--- statement
-parseStatement :: String -> Either ErrorMessage ParsedStatement
-parseStatement input = do
-    if last input == ';'
-        then do
-            let lowerCaseInput = map toLower (take (returnStartIndex (findSubstringPosition input ";")) input)
-            case words lowerCaseInput of
-                ["show", "tables"] -> Right (SQLStatement ShowTables)
-                ["show", "table", tableName] -> Right (SQLStatement (ShowTableColumns (extractSubstring input tableName)))
-                ("select" : rest) ->
-                    if substringExists "from" lowerCaseInput 
-                    then do
-                      let tableNames = extractTableNames 1 rest
-                        in if null (getNames tableNames)
-                          then 
-                            Left "Table not found"
-                          else
-                            case countCommasInList rest of
-                                n | n == (getPosition tableNames - 2) ->
-                                    let result = formColumnWithAggregateList (take (returnStartIndex (findSubstringPosition lowerCaseInput "from")) (removeAllCommas input)) (removeCommas (take (length rest - (length rest - getPosition tableNames) - 1) rest))
-                                    in case result of
-                                        Right columns ->
-                                            let limits = extractLimits (drop (returnStartIndex (findSubstringPosition lowerCaseInput "where")) input) (take (length rest - getPosition tableNames - 1) (drop (findWherePosition rest) rest))
-                                            in case limits of
-                                              Right limits ->
-                                                 Right (SQLStatement (Select (map (\tableName -> extractSubstring input tableName) (take (findWherePosition (getNames tableNames)) (getNames tableNames))) columns limits))
-                                              Left errorMessage -> Left errorMessage
-                                        Left errorMessage -> Left errorMessage
-                                n | n > (getPosition tableNames - 2) -> Left "No column names were found (SELECT clause)"
-                                _ -> Left "Missing (,) after SELECT"
-                    else
-                        Left "Missing FROM clause"
-                _ -> Left "Not implemented: parseStatement"
-        else Left "Missing (;) after statement"
+class Applicative f => Alternative f where
+  empty :: f a
+  (<|>) :: f a -> f a -> f a
 
-findWherePosition :: [String] -> Int
-findWherePosition rest =
-  case span (/= "where") rest of
-    (_, [])   -> length rest
-    (beforeWhere, _) -> length beforeWhere 
+newtype Parser a = Parser {
+    runParser :: String -> Either ErrorMessage (a, String)
+  }
 
-substringExists :: String -> String -> Bool
-substringExists substring string = isInfixOf substring string
+instance Functor Parser where
+  fmap f (Parser x) = Parser $ \s -> do
+    (result, newState) <- x s
+    return (f result, newState)
 
-countCommasInList :: [String] -> Int
-countCommasInList strings = sum $ map (length . filter (== ',')) strings
+instance Applicative Parser where
+  pure x = Parser $ \input -> Right (x, input)
+  (Parser pf) <*> (Parser pa) = Parser $ \input ->
+    case pf input of
+      Left err -> Left err
+      Right (f, rest) -> case pa rest of
+        Left err -> Left err
+        Right (a, rest') -> Right (f a, rest')
 
-removeCommas :: [String] -> [String]
-removeCommas = map removeComma
+instance Monad Parser where
+  (Parser x) >>= f = Parser $ \s -> do
+    (result, newState) <- x s
+    runParser (f result) newState
+
+instance Alternative Parser where
+  empty = Parser $ \_ -> Left "No alternative"
+  (Parser p1) <|> (Parser p2) = Parser $ \input ->
+    case p1 input of
+      Left _ -> p2 input
+      result -> result
+
+tryParser :: Parser a -> Parser a
+tryParser (Parser p) = Parser $ \input ->
+  case p input of
+    Left errorMessage -> Left errorMessage
+    Right (result, remaining) -> Right (result, remaining)
+
+separate :: Parser a -> Parser b -> Parser [a]
+separate p sep = (:) <$> p <*> many (sep *> p) <|> pure []
+
+many :: Parser a -> Parser [a]
+many p = go
   where
-    removeComma :: String -> String
-    removeComma str =
-        let reversedStr = reverse str
-            reversedStrWithoutCommas = dropWhile (== ',') reversedStr
-        in reverse reversedStrWithoutCommas
+    go = (:) <$> p <*> go <|> pure []
 
-removeAllCommas :: String -> String
-removeAllCommas = filter (/= ',')
+optional :: Parser a -> Parser (Maybe a)
+optional p = do
+  Just <$> p
+  <|> return Nothing
 
-extractTableNames :: Int -> [String] -> ([String], Int)
-extractTableNames index [] = ([], index)
-extractTableNames index ("from" : tableName : rest) = (tableName : rest, index)
-extractTableNames index (_ : columns) = extractTableNames (index + 1) columns
+charParser :: Char -> Parser Char
+charParser c = Parser parseC
+  where parseC [] = Left "Empty or unfinished query"
+        parseC (x : xs) | x == c = Right (c, xs)
+                        | otherwise = Left ("Expected " ++ [c] ++ " in the query")
 
-getNames :: ([String], Int) -> [String]
-getNames (names, _) = names
+stringParser :: String -> Parser String
+stringParser statement = Parser $ \input ->
+  case take (length statement) input of
+    [] -> Left "Empty or unfinished query"
+    match
+        | map toLower match == map toLower statement -> Right (match, drop (length match) input)
+        | otherwise -> Left ("Expected '" ++ statement ++ "' in the query")
 
-getPosition :: ([String], Int) -> Int
-getPosition (_, position) = position
+whiteSpaceParser :: Parser String
+whiteSpaceParser = Parser $ \input ->
+  case span isSpace input of
+    ("", _ ) -> Left ("Expected whitespace before '" ++ input ++ "'")
+    (whitespace, remainder) -> Right (whitespace, remainder)
 
-extractLimits :: String -> [String] -> Either ErrorMessage [Limit]
-extractLimits _ [] = Right []  -- Empty list is a valid case, so return Right
-extractLimits input ("where" : rest) = extractLimits input rest
-extractLimits input ("or" : rest) = extractLimits input rest
-extractLimits input (columnName : equalitySign : value : rest)
-  | validateEqualitySign equalitySign = do
-    let originalColumnName = extractSubstring input columnName
-    let valueType = getValueType (extractSubstring input value)
-    restLimits <- extractLimits input rest
-    return (Limit originalColumnName valueType : restLimits)
-  | otherwise = Left "'=' was not found"
+showTablesParser :: Parser ParsedStatement
+showTablesParser = tryParser $ do
+  _ <- stringParser "show"
+  _ <- whiteSpaceParser
+  _ <- stringParser "tables"
+  _ <- stringParser ";"
+  pure ShowTables
 
+tableNameParser :: Parser TableName
+tableNameParser = Parser $ \input ->
+  case lookup (init (dropWhiteSpaces input)) InMemoryTables.database of
+    Just _ -> Right (init (dropWhiteSpaces input), [last (dropWhiteSpaces input)])
+    Nothing -> Left ("Such table does not exist in the database")
 
-validateEqualitySign :: String -> Bool
-validateEqualitySign "=" = True;
-validateEqualitySign _ = False;
+-- validateDatabaseTables :: String -> Either ErrorMessage String
+-- validateDatabaseTables table = case lookup table InMemoryTables.database of
+--   Just _ -> Right table
+--   Nothing -> Left ("Such table does not exist in the database")
+
+showTableParser :: Parser ParsedStatement
+showTableParser = tryParser $ do
+  _ <- stringParser "show"
+  _ <- whiteSpaceParser
+  _ <- stringParser "table"
+  _ <- whiteSpaceParser
+  tableName <- tableNameParser
+  _ <- stringParser ";"
+  pure (ShowTable tableName)
+
+aggregateParser :: Parser (Maybe Aggregate)
+aggregateParser = do
+  maybeAggregate <- (stringParser "max(" *> pure (Just Max)) <|> (stringParser "sum(" *> pure (Just Sum)) <|> pure Nothing
+  pure maybeAggregate
+
+alphanumericParser :: Parser String
+alphanumericParser = Parser $ \input ->
+  case takeWhile (\x -> isAlphaNum x) input of
+    [] -> Left "Empty input"
+    xs -> Right (xs, drop (length xs) input)
+
+columnWithAggregateParser :: Parser ColumnWithAggregate
+columnWithAggregateParser = do
+  _ <- optional whiteSpaceParser
+  maybeAggregate <- aggregateParser
+  columnName <- alphanumericParser
+  _ <- optional (stringParser ")")
+  pure (ColumnWithAggregate columnName maybeAggregate)
+
+columnSectionParser :: Parser [ColumnWithAggregate]
+columnSectionParser = separate columnWithAggregateParser (stringParser ",")
+
+selectTableParser :: Parser TableName
+selectTableParser = do
+  _ <- optional whiteSpaceParser
+  table <- alphanumericParser
+  pure table
+
+tableSectionParser :: Parser [TableName]
+tableSectionParser = separate selectTableParser (stringParser ",")
 
 getValueType :: String -> Value
 getValueType value
@@ -154,6 +207,63 @@ getValueType value
   | map toLower value == "false" = BoolValue False
   | null value || all isSpace value = NullValue
   | otherwise = StringValue value
+
+whereConditionParser :: Parser Limit
+whereConditionParser = do
+  _ <- optional whiteSpaceParser
+  columnName <- alphanumericParser
+  _ <- optional whiteSpaceParser
+  _ <- stringParser "="
+  _ <- optional whiteSpaceParser
+  value <- alphanumericParser
+  _ <- optional whiteSpaceParser
+  pure (Limit columnName (getValueType value))
+
+whereSectionParser :: Parser [Limit]
+whereSectionParser = separate whereConditionParser (stringParser "or")
+
+selectParser :: Parser ParsedStatement
+selectParser = tryParser $ do
+  _ <- stringParser "select"
+  _ <- whiteSpaceParser
+  columns <- columnSectionParser
+  _ <- whiteSpaceParser
+  _ <- stringParser "from"
+  _ <- whiteSpaceParser
+  tables <- tableSectionParser
+  conditions <- optional $ do
+    _ <- whiteSpaceParser
+    _ <- stringParser "where"
+    _ <- whiteSpaceParser
+    conditions <- whereSectionParser
+    pure conditions
+  _ <- stringParser ";"
+  _ <- optional whiteSpaceParser
+  pure (Select columns tables (fromMaybe [] conditions))
+
+parseStatement :: String -> Either ErrorMessage ParsedStatement
+parseStatement input = case runParser parser input of
+  Left errorMessage -> Left errorMessage
+  Right (input, remainder) ->
+    case input of
+      ShowTables -> validateRemainder remainder >> Right input
+      ShowTable _ -> validateRemainder remainder >> Right input
+      Select _ _ _ -> validateRemainder remainder >> Right input
+  where
+    parser :: Parser ParsedStatement
+    parser = showTablesParser <|> showTableParser <|> selectParser
+
+    validateRemainder :: String -> Either ErrorMessage ()
+    validateRemainder remainder =
+      case runParser (optional whiteSpaceParser) remainder of
+        Left errorMessage -> Left errorMessage
+        Right _ -> Right ()
+
+dropWhiteSpaces :: String -> String
+dropWhiteSpaces = filter (not . isSpace)
+
+columnNamesToRows :: [Column] -> [Row]
+columnNamesToRows = map (\(Column name _) -> [StringValue name])
 
 formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
 formColumnWithAggregateList _ [] = Left "No column names were found (SELECT clause)"
@@ -296,7 +406,7 @@ selectFromTable tableName columns limits database =
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
       then
-        case applyLimits (DataFrame tableColumns tableRows) limits of 
+        case applyLimits (DataFrame tableColumns tableRows) limits of
           Right dataframe -> Right dataframe
           Left errorMessage -> Left errorMessage
       else
@@ -377,12 +487,12 @@ combineRows rows1 rows2 = Right [v1 ++ v2 | v1 <- rows1, v2 <- rows2]
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
 executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
-executeStatement (SQLStatement command) = case command of
+executeStatement parsedStatement = case parsedStatement of
   ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) database
-  ShowTableColumns tableName -> case findTable tableName database of
+  ShowTable tableName -> case findTable tableName database of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
-  Select tableNames columns limits -> combineDataFrames (selectMultipleTables tableNames columns limits)
+  Select columns tables conditions -> combineDataFrames (selectMultipleTables tables columns conditions)
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 

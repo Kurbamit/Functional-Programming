@@ -1,5 +1,5 @@
 module Main (main) where
-
+  
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Free (Free (..))
 
