@@ -46,7 +46,7 @@ main = hspec $ do
     it "parses a 'SHOW TABLE' statement" $ do
       Lib2.parseStatement "SHOW TABLE employees;" `shouldBe` Right (ShowTable "employees")
     it "parses 'SELECT *' and return all column names from specified table" $ do
-      Lib2.parseStatement "SELECT * FROM employees;" `shouldBe` Right (ShowTable "employees")
+      Lib2.parseStatement "SELECT * FROM employees;" `shouldBe` Right (Select [ColumnWithAggregate "*" Nothing] ["employees"] [])
     it "parses multiple columns from table" $ do
       Lib2.parseStatement "SELECT id, name FROM employees;" `shouldBe` Right (Select [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] ["employees"] [])
     it "parser does not parse invalid 'SELECT' statement" $ do
