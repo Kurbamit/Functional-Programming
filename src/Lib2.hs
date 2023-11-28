@@ -31,7 +31,7 @@ import Control.Monad.Trans.Error (Error)
 import Data.List (foldl')
 import Text.ParserCombinators.ReadP (string, sepBy, char, option)
 import Data.Char (isSpace)
-import GHC.Event.Windows (withException)
+-- import GHC.Event.Windows (withException)
 import GHC.OldList (dropWhileEnd)
 import Control.Alternative.Free
 
