@@ -63,18 +63,33 @@ main = hspec $ do
       Lib2.parseStatement "SELECT sum(id) FROM employees;" `shouldBe` Right (Select [ColumnWithAggregate "id" (Just Sum)] ["employees"] [])
     it "'SUM()' function is case-insensitive" $ do
       Lib2.parseStatement "SELECT SUM(id) FROM employees;" `shouldBe` Right (Select [ColumnWithAggregate "id" (Just Sum)] ["employees"] [])
-    it "parses WHERE statement with strings" $ do
+    it "parses WHERE statement with strings from a single table" $ do
       Lib2.parseStatement "SELECT name FROM employees WHERE name = Vi;" `shouldBe` Right (Select [ColumnWithAggregate "name" Nothing] ["employees"] [Limit "name" (StringValue "Vi")])
-    it "parses WHERE statement with numbers" $ do
+    it "parses WHERE statement with numbers from a single table" $ do
       Lib2.parseStatement "SELECT id FROM employees WHERE id = 1;" `shouldBe` Right (Select [ColumnWithAggregate "id" Nothing] ["employees"] [Limit "id" (IntegerValue 1)])
-    it "parses WHERE statement with boolean values" $ do
+    it "parses WHERE statement with boolean values from a single table" $ do
       Lib2.parseStatement "SELECT flag, value FROM flags WHERE value = True;" `shouldBe` Right (Select [ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] ["flags"] [Limit "value" (BoolValue True)])
+    it "parses a 'SELECT' statement with multiple columns and tables" $ do
+      Lib2.parseStatement "SELECT id, name, flag, value FROM employees, flags;" `shouldBe` Right (Select [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing, ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] ["employees", "flags"] [])
+    it "parses a 'SELECT' statement with aggregate functions and multiple tables" $ do
+      Lib2.parseStatement "SELECT max(id), sum(value) FROM employees, flags;" `shouldBe` Right (Select [ColumnWithAggregate "id" (Just Max), ColumnWithAggregate "value" (Just Sum)] ["employees", "flags"] [])
+    it "parses WHERE statement with strings for multiple tables" $ do
+      Lib2.parseStatement "SELECT name FROM employees, flags WHERE name = Vi;" `shouldBe` Right (Select [ColumnWithAggregate "name" Nothing] ["employees", "flags"] [Limit "name" (StringValue "Vi")])
+    it "parses WHERE statement with numbers for multiple tables" $ do
+      Lib2.parseStatement "SELECT id FROM employees, flags WHERE id = 1;" `shouldBe` Right (Select [ColumnWithAggregate "id" Nothing] ["employees", "flags"] [Limit "id" (IntegerValue 1)])
+    it "parses WHERE statement with boolean values from multiple tables" $ do
+      Lib2.parseStatement "SELECT flag, value FROM flags, employees WHERE value = True;" `shouldBe` Right (Select [ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] ["flags", "employees"] [Limit "value" (BoolValue True)])
+
 
   describe "Lib2.executeStatement" $ do
     it "executes a 'SHOW TABLES;' statement" $ do
       case Lib2.parseStatement "SHOW TABLES;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
+    it "fails to execute a 'SELECT' statement if (;) is missing" $ do
+      case Lib2.parseStatement "SELECT id, name FROM employees" of 
+        Left err -> err `shouldBe` "Empty or unfinished query"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Left missingSemicolonTestResult
     it "executes a 'SHOW TABLES;' case insensitively" $ do
       case Lib2.parseStatement "SHOW TABLES;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
@@ -139,6 +154,18 @@ main = hspec $ do
       case Lib2.parseStatement "SELECT id, surname FROM employees WHERE id = 1 OR surname = Dl;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult2
+    it "executes a 'SELECT' statement with multiple columns from multiple tables" $ do
+      case Lib2.parseStatement "SELECT id, name, flag FROM employees, flags;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right selectMultipleTablesTestResult
+    it "executes a 'SELECT' statement with multiple columns and tables" $ do
+      case Lib2.parseStatement "SELECT id, name, flag, value FROM employees, flags;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right multipleColumnsAndTablesTestResult
+    it "executes a 'SELECT' statement with aggregate functions and multiple tables" $ do
+      case Lib2.parseStatement "SELECT max(id), sum(value) FROM employees, flags;" of 
+        Left err -> err `shouldBe` "should have successfully parsed"
+        Right ps -> Lib2.executeStatement ps `shouldBe` Right aggregateFunctionsAndMultipleTablesTestResult
 
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
@@ -188,20 +215,36 @@ whereTestResult2 = DataFrame [Column "id" IntegerType, Column "surname" StringTy
                                 [IntegerValue 2, StringValue "Dl"] 
                              ]
 
-type ErrorMessage = String
+selectMultipleTablesTestResult :: DataFrame
+selectMultipleTablesTestResult = DataFrame
+  [Column "id" IntegerType, Column "name" StringType, Column "flag" StringType]
+  [ [IntegerValue 1, StringValue "Vi", StringValue "a"],
+    [IntegerValue 1, StringValue "Vi", StringValue "b"],
+    [IntegerValue 1, StringValue "Vi", StringValue "b"],
+    [IntegerValue 1, StringValue "Vi", StringValue "b"],
+    [IntegerValue 2, StringValue "Ed", StringValue "a"],
+    [IntegerValue 2, StringValue "Ed", StringValue "b"],
+    [IntegerValue 2, StringValue "Ed", StringValue "b"],
+    [IntegerValue 2, StringValue "Ed", StringValue "b"]
+  ]
 
--- parseStatementTestCase :: String -> Either ErrorMessage ParsedStatement
--- parseStatementTestCase "SHOW TABLES" = Right (SQLStatement ShowTables)
--- parseStatementTestCase "SHOW TABLE" = Right (SQLStatement (ShowTableColumns "employees"))
--- parseStatementTestCase "SELECT *" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "*" Nothing] []))
--- parseStatementTestCase "SELECT id, name" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] []))
--- parseStatementTestCase "AGGREGATE MAX()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Max)] []))
--- parseStatementTestCase "AGGREGATE MAX(String)" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "name" (Just Max)] []))
--- parseStatementTestCase "AGGREGATE SUM()" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" (Just Sum)] []))
--- parseStatementTestCase "BASIC WHERE STRING" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "name" Nothing] [Limit "name" (StringValue "Vi")]))
--- parseStatementTestCase "BASIC WHERE INT" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing] [Limit "id" (IntegerValue 1)]))
--- parseStatementTestCase "BASIC WHERE INT 2" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] [Limit "id" (IntegerValue 1)]))
--- parseStatementTestCase "WHERE TRUE" = Right (SQLStatement (Select "flags" [ColumnWithAggregate "flag" Nothing, ColumnWithAggregate "value" Nothing] [Limit "value" (BoolValue True)]))
--- parseStatementTestCase "WHERE OR" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "name" Nothing] [Limit "id" (IntegerValue 1), Limit "name" (StringValue "Ed")]))
--- parseStatementTestCase "WHERE OR 2" = Right (SQLStatement (Select "employees" [ColumnWithAggregate "id" Nothing, ColumnWithAggregate "surname" Nothing] [Limit "id" (IntegerValue 1), Limit "surname" (StringValue "Dl")]))
--- parseStatementTestCase _ = Left "Unsupported statement"
+missingSemicolonTestResult :: String
+missingSemicolonTestResult = "Error: Invalid statement. ';' is missing."
+
+multipleColumnsAndTablesTestResult :: DataFrame
+multipleColumnsAndTablesTestResult = DataFrame 
+  [Column "id" IntegerType, Column "name" StringType, Column "flag" StringType, Column "value" BoolType] 
+  [ [IntegerValue 1, StringValue "Vi", StringValue "a", BoolValue True], 
+    [IntegerValue 1, StringValue "Vi", StringValue "b", BoolValue True], 
+    [IntegerValue 1, StringValue "Vi", StringValue "b", NullValue], 
+    [IntegerValue 1, StringValue "Vi", StringValue "b", BoolValue False], 
+    [IntegerValue 2, StringValue "Ed", StringValue "a", BoolValue True], 
+    [IntegerValue 2, StringValue "Ed", StringValue "b", BoolValue True], 
+    [IntegerValue 2, StringValue "Ed", StringValue "b", NullValue], 
+    [IntegerValue 2, StringValue "Ed", StringValue "b", BoolValue False]
+  ]
+
+aggregateFunctionsAndMultipleTablesTestResult :: DataFrame
+aggregateFunctionsAndMultipleTablesTestResult = DataFrame
+  [Column "id" IntegerType, Column "value" BoolType]
+  [ [IntegerValue 2, NullValue] ]
