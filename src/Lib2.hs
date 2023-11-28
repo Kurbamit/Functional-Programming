@@ -31,24 +31,12 @@ import Control.Monad.Trans.Error (Error)
 import Data.List (foldl')
 import Text.ParserCombinators.ReadP (string, sepBy, char, option)
 import Data.Char (isSpace)
--- import GHC.Event.Windows (withException)
 import GHC.OldList (dropWhileEnd)
 import Control.Alternative.Free
 
 
 type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
-
--- Keep the type, modify constructors
--- data ParsedStatement = SQLStatement SQLCommand
---   deriving (Show, Eq)
-
--- data SQLCommand
---   = ShowTables
---   | ShowTableColumns TableName -- Add a new constructor for showing table columns
---   | Select [TableName] [ColumnWithAggregate] [Limit]
---   -- Define additional SQL commands like SUM, MIN, MAX here
---   deriving (Show, Eq)
 
 data ColumnWithAggregate = ColumnWithAggregate String (Maybe Aggregate)
   deriving (Show, Eq)
@@ -148,24 +136,13 @@ showTablesParser = tryParser $ do
   _ <- stringParser ";"
   pure ShowTables
 
-tableNameParser :: Parser TableName
-tableNameParser = Parser $ \input ->
-  case lookup (init (dropWhiteSpaces input)) InMemoryTables.database of
-    Just _ -> Right (init (dropWhiteSpaces input), [last (dropWhiteSpaces input)])
-    Nothing -> Left ("Such table does not exist in the database")
-
--- validateDatabaseTables :: String -> Either ErrorMessage String
--- validateDatabaseTables table = case lookup table InMemoryTables.database of
---   Just _ -> Right table
---   Nothing -> Left ("Such table does not exist in the database")
-
 showTableParser :: Parser ParsedStatement
 showTableParser = tryParser $ do
   _ <- stringParser "show"
   _ <- whiteSpaceParser
   _ <- stringParser "table"
   _ <- whiteSpaceParser
-  tableName <- tableNameParser
+  tableName <- alphanumericParser
   _ <- stringParser ";"
   pure (ShowTable tableName)
 
@@ -484,6 +461,18 @@ hasCommonColumns cols1 cols2 = any (\(Column name1 _) -> any (\(Column name2 _) 
 combineRows :: [Row] -> [Row] -> Either ErrorMessage [Row]
 combineRows rows1 rows2 = Right [v1 ++ v2 | v1 <- rows1, v2 <- rows2]
 
+
+validateDatabaseColumns :: [String] -> [ColumnWithAggregate] -> Bool
+validateDatabaseColumns tables columns =
+  all (\(ColumnWithAggregate columnName _) ->
+    any (\table ->
+      case lookup table InMemoryTables.database of
+        Just (DataFrame tableColumns _) ->
+          any (\(Column name _) -> name == columnName) tableColumns
+        Nothing -> False
+    ) tables
+  ) columns
+
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
 executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
@@ -492,7 +481,10 @@ executeStatement parsedStatement = case parsedStatement of
   ShowTable tableName -> case findTable tableName database of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
-  Select columns tables conditions -> combineDataFrames (selectMultipleTables tables columns conditions)
+  Select columns tables conditions -> 
+    case validateDatabaseColumns tables columns of
+      True -> combineDataFrames (selectMultipleTables tables columns conditions)
+      False -> Left $ "Such columns do not exist in database"
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
