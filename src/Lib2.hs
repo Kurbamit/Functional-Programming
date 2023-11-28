@@ -19,7 +19,7 @@ import Data.Char
 import Data.Maybe (listToMaybe, isJust, fromMaybe)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
-import InMemoryTables (TableName, database)
+import InMemoryTables (TableName, database, tableLongStrings)
 import Lib1 (parseSelectAllStatement)
 import Data.List (elemIndex)
 import Data.List (isInfixOf)
@@ -242,46 +242,6 @@ dropWhiteSpaces = filter (not . isSpace)
 columnNamesToRows :: [Column] -> [Row]
 columnNamesToRows = map (\(Column name _) -> [StringValue name])
 
-formColumnWithAggregateList :: String -> [String] -> Either ErrorMessage [ColumnWithAggregate]
-formColumnWithAggregateList _ [] = Left "No column names were found (SELECT clause)"
-formColumnWithAggregateList input inputWords = do
-    let columnAggregates = map (extractNameFromAggregate input) inputWords
-    checkMultipleAggregates columnAggregates
-
-checkMultipleAggregates :: [ColumnWithAggregate] -> Either ErrorMessage [ColumnWithAggregate]
-checkMultipleAggregates columns =
-    let aggregates = filter (\(ColumnWithAggregate _ maybeAgg) -> isJust maybeAgg) columns
-    in if length aggregates > 1
-        then Left "Multiple aggregate functions are not allowed."
-        else Right columns
-
-extractNameFromAggregate :: String -> String -> ColumnWithAggregate
-extractNameFromAggregate input word
-    | "max(" `isPrefixOf` word = ColumnWithAggregate (extractSubstring input (drop 4 (take (length word - 1) word))) (Just Max)
-    | "sum(" `isPrefixOf` word = ColumnWithAggregate (extractSubstring input (drop 4 (take (length word - 1) word))) (Just Sum)
-    | otherwise = ColumnWithAggregate (extractSubstring input word) Nothing
-
-extractSubstring :: String -> String -> String
-extractSubstring input stringToMach =
-  if stringToMach `isInfixOf` input
-    then stringToMach
-    else extractFromOriginalString input (findSubstringPosition (map toLower input) stringToMach)
-  where
-    extractFromOriginalString :: String -> (Int, Int) -> String
-    extractFromOriginalString originalString (start, end) =
-      take (end - start + 1) (drop start originalString)
-
-findSubstringPosition :: String -> String -> (Int, Int)
-findSubstringPosition string substring = findPosition 0 string
-  where
-    findPosition :: Int -> String -> (Int, Int)
-    findPosition index string@(x:xs)
-      | substring `isPrefixOf` string = (index, index + length substring - 1)
-      | otherwise = findPosition (index + 1) xs
-
-returnStartIndex :: (Int, Int) -> Int
-returnStartIndex (start, _) = start
-
 findMax :: [Value] -> Value
 findMax values@(value:_) =
   case value of
@@ -328,6 +288,9 @@ findSum values@(value:_) =
 
 getColumnName :: ColumnWithAggregate -> String
 getColumnName (ColumnWithAggregate name _) = name
+
+getColumnNames :: [ColumnWithAggregate] -> [String]
+getColumnNames columns  = [name | ColumnWithAggregate name _ <- columns]
 
 getAggregate :: ColumnWithAggregate -> Maybe Aggregate
 getAggregate (ColumnWithAggregate _ aggregate) = aggregate
@@ -462,13 +425,13 @@ combineRows :: [Row] -> [Row] -> Either ErrorMessage [Row]
 combineRows rows1 rows2 = Right [v1 ++ v2 | v1 <- rows1, v2 <- rows2]
 
 
-validateDatabaseColumns :: [String] -> [ColumnWithAggregate] -> Bool
+validateDatabaseColumns :: [String] -> [String] -> Bool
 validateDatabaseColumns tables columns =
-  all (\(ColumnWithAggregate columnName _) ->
+  all (\column ->
     any (\table ->
       case lookup table InMemoryTables.database of
         Just (DataFrame tableColumns _) ->
-          any (\(Column name _) -> name == columnName) tableColumns
+          any (\(Column name _) -> name == column) tableColumns
         Nothing -> False
     ) tables
   ) columns
@@ -482,8 +445,10 @@ executeStatement parsedStatement = case parsedStatement of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "Table not found"
   Select columns tables conditions -> 
-    case validateDatabaseColumns tables columns of
-      True -> combineDataFrames (selectMultipleTables tables columns conditions)
+    case validateDatabaseColumns tables (getColumnNames columns) of
+      True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) of
+        True -> combineDataFrames (selectMultipleTables tables columns conditions)
+        False -> Left $ "Columns specified in WHERE clause do not exists in database"
       False -> Left $ "Such columns do not exist in database"
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
