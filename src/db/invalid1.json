@@ -1,0 +1,11 @@
+{
+    "invalid1": {
+        "columns": [
+            {"name": "id", "type": "IntegerType"}
+        ],
+        "rows": [
+            ["1"]
+        ]
+    }
+}
+  

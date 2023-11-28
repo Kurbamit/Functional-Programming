@@ -1,0 +1,13 @@
+{
+    "invalid2": {
+        "columns": [
+            {"name": "id", "type": "IntegerType"},
+            {"name": "text", "type": "StringType"}
+        ],
+        "rows": [
+            [1, null],
+            [1]
+        ]
+    }
+}
+  
