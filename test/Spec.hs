@@ -136,7 +136,7 @@ main = hspec $ do
         Left err -> err `shouldBe` err
         Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
     it "executes 'WHERE OR' statement" $ do
-      case Lib2.parseStatement "SELECT id, surname FROM employees WHERE id = 1 OR surname = Dl" of 
+      case Lib2.parseStatement "SELECT id, surname FROM employees WHERE id = 1 OR surname = Dl;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
         Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult2
 
