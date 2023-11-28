@@ -11,7 +11,6 @@ module Lib2
     Limit (..),
     columnNamesToRows,
     ParsedStatement (..),
-    -- SQLCommand (..)
   )
 where
 
@@ -431,10 +430,17 @@ validateDatabaseColumns tables columns =
     any (\table ->
       case lookup table InMemoryTables.database of
         Just (DataFrame tableColumns _) ->
-          any (\(Column name _) -> name == column) tableColumns
+          any (\(Column name _) -> (name == column || column == "*")) tableColumns
         Nothing -> False
     ) tables
   ) columns
+
+validateDatabaseTables :: [String] -> Bool
+validateDatabaseTables tables =
+  all (\table -> case (findTable table database) of
+    Just (DataFrame _ _) -> True
+    Nothing -> False
+  ) tables
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
@@ -443,13 +449,15 @@ executeStatement parsedStatement = case parsedStatement of
   ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) database
   ShowTable tableName -> case findTable tableName database of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
-    Nothing -> Left "Table not found"
+    Nothing -> Left "TABLE not found"
   Select columns tables conditions -> 
-    case validateDatabaseColumns tables (getColumnNames columns) of
-      True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) of
-        True -> combineDataFrames (selectMultipleTables tables columns conditions)
-        False -> Left $ "Columns specified in WHERE clause do not exists in database"
-      False -> Left $ "Such columns do not exist in database"
+    case validateDatabaseTables tables of 
+      True -> case validateDatabaseColumns tables (getColumnNames columns) of
+        True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) of
+          True -> combineDataFrames (selectMultipleTables tables columns conditions)
+          False -> Left $ "COLUMNS specified in WHERE clause do not exists in database"
+        False -> Left $ "Such COLUMNS do not exist in database"
+      False -> Left $ "Such TABLES do not exist in database"
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
