@@ -152,9 +152,12 @@ aggregateParser = do
 
 alphanumericParser :: Parser String
 alphanumericParser = Parser $ \input ->
-  case takeWhile (\x -> isAlphaNum x || x == '*') input of
-    [] -> Left "Empty input"
-    xs -> Right (xs, drop (length xs) input)
+  case runParser (stringParser "now()") input of 
+    Right rest -> Right rest
+    Left _ -> case takeWhile (\x -> isAlphaNum x || x == '*') input of
+      [] -> Left "Empty input"
+      xs -> Right (xs, drop (length xs) input)
+
 
 columnWithAggregateParser :: Parser ColumnWithAggregate
 columnWithAggregateParser = do
