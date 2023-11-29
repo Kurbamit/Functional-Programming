@@ -5,22 +5,22 @@
 module Lib3
   ( executeSql,
     Execution,
-    ExecutionAlgebra(..)
+    ExecutionAlgebra(..),
+    -- readDatabaseFromJSON,
+    -- saveDatabaseToJSON,
   )
 where
 
 import Control.Monad.Free (Free (..), liftF)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BLC
 import Data.Aeson as Aeson
 import GHC.Generics (Generic)
-import DataFrame (DataFrame)
+import DataFrame (DataFrame(..), Column(..), ColumnType(..), Value(..))
 import Data.Time ( UTCTime )
 import Lib2
+import Data.Functor.Classes (readData)
 
-data TableEmployees = TableEmployees
-  {
-    tableName :: String
-  } deriving (Generic, FromJSON)
 
 type TableName = String
 type FileContent = String
@@ -49,11 +49,15 @@ executeSql sql = do
                 Left errorMessage -> return $ Left errorMessage
                 Right result -> return $ Right result
 
-getTableNameFromFile :: FilePath -> IO ()
-getTableNameFromFile fileName = do
-    let filePath = "src/db/" ++ fileName ++ ".json"
-    content <- BL.readFile filePath
-    let parsedContent = Aeson.decode content :: Maybe TableEmployees
-    case parsedContent of
-      Nothing -> error $ "Could not parse file " ++ filePathK
-      Just table -> putStr $ "Table name for " ++ filePath ++ " is " ++ tableName table
+
+type Database = [(TableName, DataFrame)]
+
+readDatabaseFromJSON :: FilePath -> IO (Either String Database)
+readDatabaseFromJSON filePath = do
+  content <- BLC.readFile filePath
+  return $ eitherDecode content
+
+saveDatabaseToJSON :: FilePath -> Database -> IO ()
+saveDatabaseToJSON filePath database = do
+  let content = encode database
+  BLC.writeFile filePath content

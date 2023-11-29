@@ -1,13 +1,1 @@
-{
-    "employees": {
-        "columns": [
-            {"name": "id", "type": "IntegerType"},
-            {"name": "name", "type": "StringType"},
-            {"name": "surname", "type": "StringType"}
-        ],
-        "rows": [
-            [1, "Vi", "Po"],
-            [2, "Ed", "Dl"]
-        ]
-    }
-}
+[[["id","IntegerType"],["name","StringType"],["surname","StringType"]],[[{"contents":1,"tag":"IntegerValue"},{"contents":"Vi","tag":"StringValue"},{"contents":"Po","tag":"StringValue"}],[{"contents":2,"tag":"IntegerValue"},{"contents":"Ed","tag":"StringValue"},{"contents":"Dl","tag":"StringValue"}]]]
