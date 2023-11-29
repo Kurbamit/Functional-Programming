@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Lib3
   ( executeSql,
@@ -8,9 +10,17 @@ module Lib3
 where
 
 import Control.Monad.Free (Free (..), liftF)
+import qualified Data.ByteString.Lazy as BL
+import Data.Aeson as Aeson
+import GHC.Generics (Generic)
 import DataFrame (DataFrame)
 import Data.Time ( UTCTime )
 import Lib2
+
+data TableEmployees = TableEmployees
+  {
+    tableName :: String
+  } deriving (Generic, FromJSON)
 
 type TableName = String
 type FileContent = String
@@ -38,3 +48,12 @@ executeSql sql = do
             case executeStatement parsedStatement of
                 Left errorMessage -> return $ Left errorMessage
                 Right result -> return $ Right result
+
+getTableNameFromFile :: FilePath -> IO ()
+getTableNameFromFile fileName = do
+    let filePath = "src/db/" ++ fileName ++ ".json"
+    content <- BL.readFile filePath
+    let parsedContent = Aeson.decode content :: Maybe TableEmployees
+    case parsedContent of
+      Nothing -> error $ "Could not parse file " ++ filePathK
+      Just table -> putStr $ "Table name for " ++ filePath ++ " is " ++ tableName table
