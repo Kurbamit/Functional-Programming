@@ -32,6 +32,12 @@ import Text.ParserCombinators.ReadP (string, sepBy, char, option)
 import Data.Char (isSpace)
 import GHC.OldList (dropWhileEnd)
 import Control.Alternative.Free
+import Data.Time.Clock (UTCTime)
+import Data.Time (addUTCTime)
+import Data.Time.Format (formatTime)
+import Data.Time.Format (defaultTimeLocale)
+import Data.Time.Clock (getCurrentTime)
+import System.IO.Unsafe (unsafePerformIO)
 
 
 type ErrorMessage = String
@@ -433,7 +439,7 @@ validateDatabaseColumns tables columns =
     any (\table ->
       case lookup table InMemoryTables.database of
         Just (DataFrame tableColumns _) ->
-          any (\(Column name _) -> (name == column || column == "*")) tableColumns
+          any (\(Column name _) -> (name == column || column == "*" || column == "now()")) tableColumns
         Nothing -> False
     ) tables
   ) columns
@@ -444,6 +450,21 @@ validateDatabaseTables tables =
     Just (DataFrame _ _) -> True
     Nothing -> False
   ) tables
+
+createNowDataFrame :: UTCTime -> DataFrame
+createNowDataFrame currentTime = 
+  let timeZoneOffset = 2
+      adjustedTime = addUTCTime (fromIntegral $ timeZoneOffset * 3600) currentTime
+      column = Column "now()" StringType
+      row = [StringValue (formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" adjustedTime)]
+  in DataFrame [column] [row]
+
+findColumnName :: String -> [ColumnWithAggregate] -> Bool
+findColumnName name columns =
+  any (\(ColumnWithAggregate columnName _) -> name == columnName) columns
+
+addDataFrame :: DataFrame -> [Either ErrorMessage DataFrame] -> [Either ErrorMessage DataFrame]
+addDataFrame newDataFrame currentList = currentList ++ [Right newDataFrame]
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
@@ -457,7 +478,9 @@ executeStatement parsedStatement = case parsedStatement of
     case validateDatabaseTables tables of 
       True -> case validateDatabaseColumns tables (getColumnNames columns) of
         True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) of
-          True -> combineDataFrames (selectMultipleTables tables columns conditions)
+          True -> case findColumnName "now()" columns of
+            True -> combineDataFrames (addDataFrame (createNowDataFrame (unsafePerformIO getCurrentTime)) (selectMultipleTables tables columns conditions))
+            False -> combineDataFrames (selectMultipleTables tables columns conditions)
           False -> Left $ "COLUMNS specified in WHERE clause do not exists in database"
         False -> Left $ "Such COLUMNS do not exist in database"
       False -> Left $ "Such TABLES do not exist in database"

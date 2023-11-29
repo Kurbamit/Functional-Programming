@@ -55,5 +55,5 @@ getTableNameFromFile fileName = do
     content <- BL.readFile filePath
     let parsedContent = Aeson.decode content :: Maybe TableEmployees
     case parsedContent of
-      Nothing -> error $ "Could not parse file " ++ filePathK
+      Nothing -> error $ "Could not parse file "  -- ++ filePathK 
       Just table -> putStr $ "Table name for " ++ filePath ++ " is " ++ tableName table
