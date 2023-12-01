@@ -52,12 +52,15 @@ executeSql sql = do
 
 type Database = [(TableName, DataFrame)]
 
-readDatabaseFromJSON :: FilePath -> IO (Either String Database)
-readDatabaseFromJSON filePath = do
-  content <- BLC.readFile filePath
-  return $ eitherDecode content
+readDatabaseFromJSON :: IO Database
+readDatabaseFromJSON = do
+  content <- BLC.readFile "src/db/database.json"
+  case Aeson.decode content of
+    Just db -> return db
+    Nothing -> error "Failed to decode JSON into Database"
 
-saveDatabaseToJSON :: FilePath -> Database -> IO ()
-saveDatabaseToJSON filePath database = do
-  let content = encode database
+saveDatabaseToJSON :: Database -> IO ()
+saveDatabaseToJSON database = do
+  let filePath = "src/db/database.json"
+      content = encode database
   BLC.writeFile filePath content
