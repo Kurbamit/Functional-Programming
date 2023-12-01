@@ -7,7 +7,7 @@ module Lib3
     Execution,
     ExecutionAlgebra(..),
     -- readDatabaseFromJSON,
-    -- saveDatabaseToJSON,
+    saveDatabaseToJSON
   )
 where
 
@@ -50,17 +50,15 @@ executeSql sql = do
                 Right result -> return $ Right result
 
 
-type Database = [(TableName, DataFrame)]
-
-readDatabaseFromJSON :: IO Database
-readDatabaseFromJSON = do
-  content <- BLC.readFile "src/db/database.json"
-  case Aeson.decode content of
-    Just db -> return db
-    Nothing -> error "Failed to decode JSON into Database"
+-- readDatabaseFromJSON :: IO Database
+-- readDatabaseFromJSON = do
+--   content <- BLC.readFile "src/db/database.json"
+--   case Aeson.decode content of
+--     Just db -> return db
+--     Nothing -> error "Failed to decode JSON into Database"
 
 saveDatabaseToJSON :: Database -> IO ()
 saveDatabaseToJSON database = do
-  let filePath = "src/db/database.json"
+  let filePath = "src/db/database.`json"
       content = encode database
   BLC.writeFile filePath content

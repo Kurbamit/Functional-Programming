@@ -4,7 +4,7 @@ module InMemoryTables
     tableInvalid2,
     tableLongStrings,
     tableWithNulls,
-    database,
+    -- database,
     TableName,
   )
 where
@@ -79,5 +79,5 @@ tableWithNulls =
       ]
   )
 
-database :: [(TableName, DataFrame)]
-database = [tableEmployees, tableInvalid1, tableInvalid2, tableLongStrings, tableWithNulls]
+-- database :: [(TableName, DataFrame)]
+-- database = [tableEmployees, tableInvalid1, tableInvalid2, tableLongStrings, tableWithNulls]

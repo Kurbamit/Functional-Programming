@@ -2,7 +2,7 @@ module Main (main) where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.List qualified as L
-import InMemoryTables (database)
+-- import InMemoryTables (database)
 import Lib1 qualified
 import Lib2 qualified
 import System.Console.Repline
@@ -26,7 +26,7 @@ ini = liftIO $ putStrLn "Welcome to select-more database! Press [TAB] for auto c
 
 completer :: (Monad m) => WordCompleter m
 completer n = do
-  let names = ["select", "*", "from", "show", "table", "tables"] ++ map fst database
+  let names = ["select", "*", "from", "show", "table", "tables"] -- ++ map fst database
   return $ Prelude.filter (L.isPrefixOf n) names
 
 -- Evaluation : handle each line user inputs

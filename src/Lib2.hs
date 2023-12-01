@@ -3,14 +3,28 @@
 
 module Lib2
   (
-    parseStatement,
-    executeStatement,
-    runSql,
+    Database, 
     ColumnWithAggregate (..),
     Aggregate (..),
     Limit (..),
-    columnNamesToRows,
     ParsedStatement (..),
+    Parser,
+    readDatabaseFromJSON,
+    database,
+    parseStatement,
+    executeStatement,
+    runSql,
+    runParser,
+    tryParser,
+    separate,
+    many,
+    optional,
+    stringParser,
+    whiteSpaceParser,
+    showTablesParser,
+    showTableParser,
+    aggregateParser,
+    alphanumericParser
   )
 where
 
@@ -18,19 +32,9 @@ import Data.Char
 import Data.Maybe (listToMaybe, isJust, fromMaybe)
 import Data.List (find, isPrefixOf)
 import DataFrame (Column (..), ColumnType (..), Value (..), Row, DataFrame (..))
-import InMemoryTables (TableName, database, tableLongStrings)
+import InMemoryTables (TableName, tableLongStrings)
 import Lib1 (parseSelectAllStatement)
 import Data.List (elemIndex)
-import Data.List (isInfixOf)
-import Data.List (sum)
-import Data.List (find)
-import Data.List (nub)
-import GHC.Generics (D)
-import Control.Monad.Trans.Error (Error)
-import Data.List (foldl')
-import Text.ParserCombinators.ReadP (string, sepBy, char, option)
-import Data.Char (isSpace)
-import GHC.OldList (dropWhileEnd)
 import Control.Alternative.Free
 import Data.Time.Clock (UTCTime)
 import Data.Time (addUTCTime)
@@ -38,7 +42,19 @@ import Data.Time.Format (formatTime)
 import Data.Time.Format (defaultTimeLocale)
 import Data.Time.Clock (getCurrentTime)
 import System.IO.Unsafe (unsafePerformIO)
+import Data.Aeson (decode, encode)
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BLC
 
+readDatabaseFromJSON :: IO Database
+readDatabaseFromJSON = do
+  content <- BLC.readFile "src/db/database.json"
+  case decode content of
+    Just db -> return db
+    Nothing -> error "Failed to decode JSON into Database"
+
+database :: [(TableName, DataFrame)]
+database = unsafePerformIO readDatabaseFromJSON
 
 type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
@@ -112,12 +128,6 @@ optional :: Parser a -> Parser (Maybe a)
 optional p = do
   Just <$> p
   <|> return Nothing
-
-charParser :: Char -> Parser Char
-charParser c = Parser parseC
-  where parseC [] = Left "Empty or unfinished query"
-        parseC (x : xs) | x == c = Right (c, xs)
-                        | otherwise = Left ("Expected " ++ [c] ++ " in the query")
 
 stringParser :: String -> Parser String
 stringParser statement = Parser $ \input ->
@@ -244,12 +254,6 @@ parseStatement input = case runParser parser input of
         Left errorMessage -> Left errorMessage
         Right _ -> Right ()
 
-dropWhiteSpaces :: String -> String
-dropWhiteSpaces = filter (not . isSpace)
-
-columnNamesToRows :: [Column] -> [Row]
-columnNamesToRows = map (\(Column name _) -> [StringValue name])
-
 findMax :: [Value] -> Value
 findMax values@(value:_) =
   case value of
@@ -348,9 +352,9 @@ extractNamesFromLimits limits = [name | Limit name _ <- limits]
 extractNameFromLimit :: Limit -> String
 extractNameFromLimit (Limit name _) = name
 
-selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
-selectFromTable tableName columns limits database =
-  case findTable tableName database of
+selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Either ErrorMessage DataFrame
+selectFromTable tableName columns limits =
+  case findTable tableName of
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
       then
@@ -382,11 +386,11 @@ filterRow row selectedColumns = [row !! index | (index, _) <- selectedColumns]
 
 selectMultipleTables :: [TableName] -> [ColumnWithAggregate] -> [Limit] -> [Either ErrorMessage DataFrame]
 selectMultipleTables tableNames columns limits =
-  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) (filterTableLimits tableName limits) database) tableNames
+  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) (filterTableLimits tableName limits)) tableNames
 
 filterTableColumns :: String -> [ColumnWithAggregate] -> [ColumnWithAggregate]
 filterTableColumns tableName columns =
-  case findTable tableName database of
+  case findTable tableName of
     Just (DataFrame tableColumns _) ->
       case columns of
         (column : rest) ->
@@ -399,7 +403,7 @@ extractColumnName (Column name _) = name
 
 filterTableLimits :: String -> [Limit] -> [Limit]
 filterTableLimits tableName limits =
-  case findTable tableName database of
+  case findTable tableName of
     Just (DataFrame tableColumns _) ->
       filter (\limit -> extractNameFromLimit limit `elem` map extractColumnName tableColumns) limits
 
@@ -437,7 +441,7 @@ validateDatabaseColumns :: [String] -> [String] -> Bool
 validateDatabaseColumns tables columns =
   all (\column ->
     any (\table ->
-      case lookup table InMemoryTables.database of
+      case lookup table database of
         Just (DataFrame tableColumns _) ->
           any (\(Column name _) -> (name == column || column == "*" || column == "now()")) tableColumns
         Nothing -> False
@@ -446,7 +450,7 @@ validateDatabaseColumns tables columns =
 
 validateDatabaseTables :: [String] -> Bool
 validateDatabaseTables tables =
-  all (\table -> case (findTable table database) of
+  all (\table -> case (findTable table) of
     Just (DataFrame _ _) -> True
     Nothing -> False
   ) tables
@@ -471,7 +475,7 @@ addDataFrame newDataFrame currentList = currentList ++ [Right newDataFrame]
 executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
 executeStatement parsedStatement = case parsedStatement of
   ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) database
-  ShowTable tableName -> case findTable tableName database of
+  ShowTable tableName -> case findTable tableName of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "TABLE not found"
   Select columns tables conditions -> 
@@ -497,8 +501,8 @@ runSql input = do
     Left err -> Left err
 
 -- Helper function to perform case-sensitive lookup
-findTable :: TableName -> Database -> Maybe DataFrame
-findTable targetTable database =
+findTable :: TableName -> Maybe DataFrame
+findTable targetTable =
   listToMaybe [table | (tableName, table) <- database, targetTable `caseSensitiveEquals` tableName]
 
 -- Helper function to perform case-sensitive comparison
