@@ -14,11 +14,11 @@ main = hspec $ do
     it "handles empty lists" $ do
       Lib1.findTableByName [] "" `shouldBe` Nothing
     it "handles empty names" $ do
-      Lib1.findTableByName D.database "" `shouldBe` Nothing
+      Lib1.findTableByName Lib2.database "" `shouldBe` Nothing
     it "can find by name" $ do
-      Lib1.findTableByName D.database "employees" `shouldBe` Just (snd D.tableEmployees)
+      Lib1.findTableByName Lib2.database "employees" `shouldBe` Just (snd D.tableEmployees)
     it "can find by case-insensitive name" $ do
-      Lib1.findTableByName D.database "employEEs" `shouldBe` Just (snd D.tableEmployees)
+      Lib1.findTableByName Lib2.database "employEEs" `shouldBe` Just (snd D.tableEmployees)
   describe "Lib1.parseSelectAllStatement" $ do
     it "handles empty input" $ do
       Lib1.parseSelectAllStatement "" `shouldSatisfy` isLeft

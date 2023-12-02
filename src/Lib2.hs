@@ -499,7 +499,7 @@ runSql input = do
       Right $ map (\(StringValue tableName : _) -> tableName) rows
     Right _ -> Left "Invalid result format"
     Left err -> Left err
-
+    
 -- Helper function to perform case-sensitive lookup
 findTable :: TableName -> Maybe DataFrame
 findTable targetTable =
