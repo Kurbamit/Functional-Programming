@@ -24,7 +24,10 @@ module Lib2
     showTablesParser,
     showTableParser,
     aggregateParser,
-    alphanumericParser
+    alphanumericParser,
+    getValueType,
+    filterRow,
+    getColumnNames
   )
 where
 
