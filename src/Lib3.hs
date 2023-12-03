@@ -337,6 +337,6 @@ executeSql sql = do
           case parseStatement3 sql of
               Right (Delete table limit) -> case (deleteStatement table limit) of
                 Left errorMessage -> return $ Left errorMessage
-                Right result -> return $ Right result
+                Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
               Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
