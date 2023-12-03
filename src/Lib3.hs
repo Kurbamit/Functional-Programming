@@ -34,7 +34,6 @@ import Data.List (find)
 import GHC.IO (unsafePerformIO)
 import Data.Char (toLower)
 import Control.Monad.Trans.Error (Error)
-import GHC.Windows (getErrorMessage)
 
 
 type TableName = String
