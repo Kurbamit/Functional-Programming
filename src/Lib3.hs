@@ -28,6 +28,8 @@ import Data.Aeson.Encoding (value)
 import Data.List (sortBy)
 import Data.Functor.Identity (Identity)
 import Data.List (find)
+import GHC.IO (unsafePerformIO)
+import Data.Char (toLower)
 
 
 type TableName = String
@@ -45,6 +47,11 @@ type ColumnName = String
 data ParsedStatement2
   = Insert TableName [ColumnName] [DataFrame.Value]
       deriving (Show, Eq)
+
+data Statements
+  = ParseStatement
+  | ParseStatement2
+  deriving Show
 
 type Execution = Free ExecutionAlgebra
 
@@ -94,12 +101,6 @@ insertParser = do
   _ <- stringParser ";"
   pure (Insert table (fromMaybe [] columns) values)
 
-formStringFromColumns :: [ColumnName] -> String
-formStringFromColumns columns =
-  if null columns
-    then "*"
-    else concat $ intersperse ", " columns
-
 convertColumnsToString :: [Column] -> [ColumnName]
 convertColumnsToString columns =
   map (\(Column name _) -> name) columns
@@ -135,20 +136,46 @@ addNewRow newRow list = list ++ [newRow]
 checkIfColumnSectionIsSkipped :: [ColumnName] -> Bool
 checkIfColumnSectionIsSkipped = null
 
+findDataFrame :: TableName -> Either ErrorMessage DataFrame
+findDataFrame table = 
+  case find (\(name, _) -> name == table) database of
+    Just (_, dataframe) -> Right dataframe
+    Nothing -> Left $ "No TABLE with name '" ++ table ++ "' was found"
+
+validateInsertStatement :: TableName -> [ColumnName] -> [DataFrame.Value] -> Either ErrorMessage Bool
+validateInsertStatement table columns values =
+  case findDataFrame table of
+    Right (DataFrame tableColumns _) -> 
+      case validateDatabaseColumns [table] columns of
+        True -> 
+          if null columns
+            then
+              if length values == length tableColumns
+                then Right True
+                else Left $ "Incorrect specified number of values, " ++ show (length tableColumns) ++ " values expected"
+            else 
+              if length columns == length values
+                then Right True
+                else Left $ "Incorrect specified number of values, " ++ show (length columns) ++ " values expected"
+        False -> Left $ "Such COLUMNS do not exist in database"
+    Left errorMessage -> Left errorMessage 
+
 insertStatement :: TableName -> [ColumnName] -> [DataFrame.Value] -> Either ErrorMessage DataFrame
 insertStatement table columns values = 
-  case parseStatement ("select " ++ formStringFromColumns columns ++ " from " ++ table ++ ";") of
+  case parseStatement ("select * from " ++ table ++ ";") of
     Left errorMessage -> Left errorMessage
     Right parsedStatement -> 
-      case executeStatement parsedStatement of
+      case validateInsertStatement table columns values of
+        Right _ ->
+          case executeStatement parsedStatement of
+            Left errorMessage -> Left errorMessage
+            Right (DataFrame tableColumns tableRows) -> 
+              case checkIfColumnSectionIsSkipped columns of
+                True -> 
+                  Right (DataFrame tableColumns (addNewRow values tableRows))
+                False ->
+                  Right (DataFrame tableColumns (addNewRow (formNewValueList (length tableColumns) (sortList (zipLists values (getColumnsWithIndexes columns (convertColumnsToString tableColumns))))) tableRows))
         Left errorMessage -> Left errorMessage
-        Right (DataFrame tableColumns tableRows) -> 
-          case checkIfColumnSectionIsSkipped columns of
-            True -> 
-              Right (DataFrame tableColumns (addNewRow values tableRows))
-            False ->
-              Right (DataFrame tableColumns (addNewRow (formNewValueList (length tableColumns) (sortList (zipLists values (getColumnsWithIndexes columns (convertColumnsToString tableColumns))))) tableRows))
-
 
 parseStatement2 :: String -> Either ErrorMessage ParsedStatement2
 parseStatement2 input = case runParser parser input of
@@ -162,24 +189,50 @@ parseStatement2 input = case runParser parser input of
     parser :: Parser ParsedStatement2
     parser = insertParser
 
-executeSql :: String -> Execution (Either ErrorMessage DataFrame)
-executeSql sql = do
-  case parseStatement2 sql of
-      Right (Insert table columns values) -> case (insertStatement table columns values) of
-          Left errorMessage -> return $ Left errorMessage
-          Right result -> return $ Right result
-      Left errorMessage -> return $ Left errorMessage
-
-    -- case parseStatement sql of
-    --     Left errorMessage -> return $ Left errorMessage
-    --     Right parsedStatement -> do
-    --         case executeStatement parsedStatement of
-    --             Left errorMessage -> return $ Left errorMessage
-    --             Right result -> return $ Right result
-
+updateDatabase :: TableName -> DataFrame -> Database
+updateDatabase tableName newDataFrame = 
+  (tableName, newDataFrame) : filter (\(name, _) -> name /= tableName) database
 
 saveDatabaseToJSON :: Database -> IO ()
-saveDatabaseToJSON database = do
-  let filePath = "src/db/database.`json"
-      content = encode database
+saveDatabaseToJSON updatedDatabase = do
+  let filePath = "src/db/database.json"
+      content = encode updatedDatabase
   BLC.writeFile filePath content
+
+updateAndSave :: TableName -> DataFrame -> IO DataFrame
+updateAndSave tableName newDataFrame = do
+  let updatedDatabase = updateDatabase tableName newDataFrame 
+  saveDatabaseToJSON updatedDatabase
+  case lookup tableName updatedDatabase of
+    Just dataFrame -> return dataFrame
+    Nothing -> error "Table not found after update and save."
+
+decideParser :: String -> Either ErrorMessage Statements
+decideParser sql =
+    case map toLower firstWord of
+        "insert" -> Right ParseStatement2
+        "select" -> Right ParseStatement
+        "show" -> Right ParseStatement
+        _ -> Left "Unknown statement"
+    where
+        firstWord = takeWhile (/= ' ') sql
+
+executeSql :: String -> Execution (Either ErrorMessage DataFrame)
+executeSql sql = do
+  case decideParser sql of
+    Right statement -> 
+      case statement of 
+        ParseStatement -> 
+          case parseStatement sql of
+            Left errorMessage -> return $ Left errorMessage
+            Right parsedStatement -> do
+                case executeStatement parsedStatement of
+                    Left errorMessage -> return $ Left errorMessage
+                    Right result -> return $ Right result
+        ParseStatement2 -> 
+          case parseStatement2 sql of
+              Right (Insert table columns values) -> case (insertStatement table columns values) of
+                  Left errorMessage -> return $ Left errorMessage
+                  Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
+              Left errorMessage -> return $ Left errorMessage
+    Left errorMessage -> return $ Left errorMessage

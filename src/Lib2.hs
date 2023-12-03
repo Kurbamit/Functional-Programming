@@ -27,7 +27,8 @@ module Lib2
     alphanumericParser,
     getValueType,
     filterRow,
-    getColumnNames
+    getColumnNames,
+    validateDatabaseColumns
   )
 where
 
