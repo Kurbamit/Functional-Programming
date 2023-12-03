@@ -6,8 +6,11 @@ module Lib3
   ( executeSql,
     Execution,
     ExecutionAlgebra(..),
-    -- readDatabaseFromJSON,
-    saveDatabaseToJSON
+    ParsedStatement2(..),
+    ParsedStatement3(..),
+    saveDatabaseToJSON,
+    parseStatement2,
+    parseStatement3
   )
 where
 
