@@ -5,7 +5,7 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
-import Lib3
+import Lib3 (parseStatement2, parseStatement3, ParsedStatement2(..), ParsedStatement3(..))
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
