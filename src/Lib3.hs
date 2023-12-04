@@ -127,6 +127,8 @@ deleteParser :: Parser ParsedDeleteStatement
 deleteParser = do
   _ <- stringParser "delete"
   _ <- whiteSpaceParser
+  _ <- stringParser "from"
+  _ <- whiteSpaceParser
   table <- alphanumericParser
   limit <- optional $ do
     _ <- whiteSpaceParser
