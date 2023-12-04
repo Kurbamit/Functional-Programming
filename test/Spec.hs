@@ -224,6 +224,10 @@ main = hspec $ do
       Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas;" `shouldBe` Right updateTestResult3
     it "do not parse 'UPDATE' statement without semi-colon" $ do
       Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas" `shouldSatisfy` isLeft
+    it "parses now() function" $ do
+      Lib2.parseStatement "select id, now() from employees;" `shouldBe` Right nowTestResult
+    it "parses only now() function" $ do
+      Lib2.parseStatement "select now() from employees;" `shouldBe` Right nowTestResult2
 
   describe "Lib3.insertStatement" $ do
     it "inserts a new row into the table with valid input" $ do
@@ -410,3 +414,9 @@ updateTestResult2 = Update "employees" [SetValue "id" (IntegerValue 1)] (Limit "
 
 updateTestResult3 :: ParsedUpdateStatement
 updateTestResult3 = Update "employees" [SetValue "name" (StringValue "Ponas")] (Limit "" NullValue)
+
+nowTestResult :: ParsedStatement
+nowTestResult =  Select [ColumnWithAggregate "id" Nothing,ColumnWithAggregate "now()" Nothing] ["employees"] []
+
+nowTestResult2 :: ParsedStatement
+nowTestResult2 = Select [ColumnWithAggregate "now()" Nothing] ["employees"] []
