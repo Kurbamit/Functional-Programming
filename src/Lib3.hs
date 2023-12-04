@@ -9,6 +9,7 @@ module Lib3
     ParsedInsertStatement(..),
     ParsedDeleteStatement(..),
     ParsedUpdateStatement(..),
+    SetValue(..),
     saveDatabaseToJSON,
     parseInsertStatement,
     parseDeleteStatement,

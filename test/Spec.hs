@@ -5,8 +5,8 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
-import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement, 
-              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..))
+import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement,executeSql, 
+              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..))
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -185,6 +185,16 @@ main = hspec $ do
       Lib3.parseInsertStatement "InSeRt InTo employees (id) VaLuEs (123);" `shouldBe` Right insertTestResult3
     it "parses 'INSERT' statement without every column name and value" $ do
       Lib3.parseInsertStatement "INSERT INTO employees (id) values;" `shouldSatisfy` isLeft
+    it "do not parse 'INSERT' statement with missing 'INTO' keyword" $ do
+      Lib3.parseInsertStatement "INSERT employees (id, name, surname) values (123, HaskellisJega, NOT);" `shouldSatisfy` isLeft
+    it "do not parse 'INSERT' statement with missing 'INTO' keyword case-insensitively" $ do
+      Lib3.parseInsertStatement "InSeRt employees (id, name, surname) VaLuEs (123, HaskellisJega, NOT);" `shouldSatisfy` isLeft
+    it "do not parse 'INSERT' statement with missing 'VALUES' keyword" $ do
+      Lib3.parseInsertStatement "INSERT INTO employees (id, name, surname) (123, HaskellisJega, NOT);" `shouldSatisfy` isLeft
+    it "do not parse 'INSERT' statement with missing 'VALUES' keyword case-insensitively" $ do
+      Lib3.parseInsertStatement "InSeRt InTo employees (id, name, surname) (123, HaskellisJega, NOT);" `shouldSatisfy` isLeft
+    it "do not parse 'INSERT' statement without semi-colon" $ do
+      Lib3.parseInsertStatement "INSERT INTO employees (id, name, surname) values (123, HaskellisJega, NOT)" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement" $ do
       Lib3.parseDeleteStatement "DELETE employees WHERE id = 1;" `shouldBe` Right deleteTestResult
     it "parses 'DELETE' statement case-insensitively" $ do
@@ -197,6 +207,23 @@ main = hspec $ do
       Lib3.parseDeleteStatement "DELETE employees;" `shouldBe` Right deleteTestResult2
     it "parses 'DELETE' statement with missing 'WHERE' keyword and deletes everything in the table case-insensitively" $ do
       Lib3.parseDeleteStatement "delete employees;" `shouldBe` Right deleteTestResult2
+    it "do not parse 'DELETE' statement without semi-colon" $ do
+      Lib3.parseDeleteStatement "DELETE employees WHERE id = 1" `shouldSatisfy` isLeft
+    it "do not parse 'DELETE' statement without 'WHERE' keyword" $ do
+      Lib3.parseDeleteStatement "DELETE employees id = 1;" `shouldSatisfy` isLeft
+    it "parses 'UPDATE' statement" $ do
+      Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas, surname = Krabas where id = 1;" `shouldBe` Right updateTestResult
+    it "parses 'UPDATE' statement case-insensitively" $ do
+      Lib3.parseUpdateStatement "UpDaTe employees SeT name = Ponas, surname = Krabas WhErE id = 1;" `shouldBe` Right updateTestResult
+    it "parses 'UPDATE' statement with one argument" $ do
+      Lib3.parseUpdateStatement "UPDATE employees SET id = 1 where id = 2;" `shouldBe` Right updateTestResult2
+    it "parses 'UPDATE' statement with one argument case-insensitively" $ do
+      Lib3.parseUpdateStatement "UpDaTe employees SeT id = 1 WhErE id = 2;" `shouldBe` Right updateTestResult2
+    it "parses 'UPDATE' statement with missing 'WHERE' keyword" $ do
+      Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas;" `shouldBe` Right updateTestResult3
+    it "do not parse 'UPDATE' statement without semi-colon" $ do
+      Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas" `shouldSatisfy` isLeft
+
 
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
@@ -297,3 +324,12 @@ deleteTestResult = Delete "employees" (Limit "id" (IntegerValue 1))
 
 deleteTestResult2 :: ParsedDeleteStatement
 deleteTestResult2 = Delete "employees" (Limit "" NullValue)
+
+updateTestResult :: ParsedUpdateStatement
+updateTestResult = Update "employees" [SetValue "name" (StringValue "Ponas"),SetValue "surname" (StringValue "Krabas")] (Limit "id" (IntegerValue 1))
+
+updateTestResult2 :: ParsedUpdateStatement
+updateTestResult2 = Update "employees" [SetValue "id" (IntegerValue 1)] (Limit "id" (IntegerValue 2))
+
+updateTestResult3 :: ParsedUpdateStatement
+updateTestResult3 = Update "employees" [SetValue "name" (StringValue "Ponas")] (Limit "" NullValue)
