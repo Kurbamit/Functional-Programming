@@ -6,11 +6,13 @@ module Lib3
   ( executeSql,
     Execution,
     ExecutionAlgebra(..),
-    ParsedStatement2(..),
-    ParsedStatement3(..),
+    ParsedInsertStatement(..),
+    ParsedDeleteStatement(..),
+    ParsedUpdateStatement(..),
     saveDatabaseToJSON,
-    parseStatement2,
-    parseStatement3
+    parseInsertStatement,
+    parseDeleteStatement,
+    parseUpdateStatement
   )
 where
 
@@ -34,8 +36,6 @@ import Data.List (find)
 import GHC.IO (unsafePerformIO)
 import Data.Char (toLower)
 import Control.Monad.Trans.Error (Error)
-import Control.Monad (foldM)
-
 
 type TableName = String
 type FileContent = String
@@ -49,26 +49,26 @@ data ExecutionAlgebra next
 
 type ColumnName = String
 
-data ParsedStatement2
+data ParsedInsertStatement
   = Insert TableName [ColumnName] [DataFrame.Value]
       deriving (Show, Eq)
 
-data ParsedStatement3
+data ParsedDeleteStatement
   = Delete TableName Limit
     deriving (Show, Eq)
+
+data ParsedUpdateStatement
+  = Update TableName [SetValue] Limit
+  deriving (Show, Eq)
 
 data SetValue = SetValue String DataFrame.Value
   deriving (Show, Eq)
 
-data ParsedStatement4
-  = Update TableName [SetValue] Limit
-  deriving (Show, Eq)
-
 data Statements
   = ParseStatement
-  | ParseStatement2
-  | ParseStatement3
-  | ParseStatement4
+  | ParseInsertStatement
+  | ParseDeleteStatement
+  | ParseUpdateStatement
   deriving Show
 
 type Execution = Free ExecutionAlgebra
@@ -89,11 +89,10 @@ setValueParser = do
   extractedValue <- alphanumericParser
   pure (SetValue columnName (getValueType extractedValue))
 
-
 setSectionParser :: Parser [SetValue]
 setSectionParser = separate setValueParser (stringParser ",")
 
-updateParser :: Parser ParsedStatement4
+updateParser :: Parser ParsedUpdateStatement
 updateParser = do
   _ <- stringParser "update"
   _ <- whiteSpaceParser
@@ -111,18 +110,6 @@ updateParser = do
   _ <- stringParser ";"
   pure (Update table setValues (fromMaybe (Limit "" NullValue) limit))
 
-parseStatement4 :: String -> Either ErrorMessage ParsedStatement4
-parseStatement4 input = case runParser parser input of
-  Left errorMessage -> Left errorMessage
-  Right (input, remainder) ->
-    case input of
-      Update _ _ _ -> case runParser (optional whiteSpaceParser) remainder of
-        Left errorMessage -> Left errorMessage
-        Right _ -> Right input
-  where
-    parser :: Parser ParsedStatement4
-    parser = updateParser
-
 whereConditionParser :: Parser Limit
 whereConditionParser = do
   columnName <- alphanumericParser
@@ -132,7 +119,7 @@ whereConditionParser = do
   value <- alphanumericParser
   pure (Limit columnName (getValueType value))
 
-deleteParser :: Parser ParsedStatement3
+deleteParser :: Parser ParsedDeleteStatement
 deleteParser = do
   _ <- stringParser "delete"
   _ <- whiteSpaceParser
@@ -145,18 +132,6 @@ deleteParser = do
     pure limit
   _ <- stringParser ";"
   pure (Delete table (fromMaybe (Limit "" NullValue) limit))
-
-parseStatement3 :: String -> Either ErrorMessage ParsedStatement3
-parseStatement3 input = case runParser parser input of
-  Left errorMessage -> Left errorMessage
-  Right (input, remainder) ->
-    case input of
-      Delete _ _ -> case runParser (optional whiteSpaceParser) remainder of
-        Left errorMessage -> Left errorMessage
-        Right _ -> Right input
-  where
-    parser :: Parser ParsedStatement3
-    parser = deleteParser
 
 columnNameParser :: Parser ColumnName
 columnNameParser = do
@@ -176,7 +151,7 @@ valueParser = do
 valueSectionParser :: Parser [DataFrame.Value]
 valueSectionParser = separate valueParser (stringParser ",") >>= mapM (return . getValueType)
 
-insertParser :: Parser ParsedStatement2
+insertParser :: Parser ParsedInsertStatement
 insertParser = do
   _ <- stringParser "insert"
   _ <- whiteSpaceParser
@@ -197,6 +172,44 @@ insertParser = do
   _ <- stringParser ")"
   _ <- stringParser ";"
   pure (Insert table (fromMaybe [] columns) values)
+
+
+parseUpdateStatement :: String -> Either ErrorMessage ParsedUpdateStatement
+parseUpdateStatement input = case runParser parser input of
+  Left errorMessage -> Left errorMessage
+  Right (input, remainder) ->
+    case input of
+      Update _ _ _ -> case runParser (optional whiteSpaceParser) remainder of
+        Left errorMessage -> Left errorMessage
+        Right _ -> Right input
+  where
+    parser :: Parser ParsedUpdateStatement
+    parser = updateParser
+
+parseDeleteStatement :: String -> Either ErrorMessage ParsedDeleteStatement
+parseDeleteStatement input = case runParser parser input of
+  Left errorMessage -> Left errorMessage
+  Right (input, remainder) ->
+    case input of
+      Delete _ _ -> case runParser (optional whiteSpaceParser) remainder of
+        Left errorMessage -> Left errorMessage
+        Right _ -> Right input
+  where
+    parser :: Parser ParsedDeleteStatement
+    parser = deleteParser
+
+parseInsertStatement :: String -> Either ErrorMessage ParsedInsertStatement
+parseInsertStatement input = case runParser parser input of
+  Left errorMessage -> Left errorMessage
+  Right (input, remainder) ->
+    case input of
+      Insert _ _ _ -> case runParser (optional whiteSpaceParser) remainder of
+        Left errorMessage -> Left errorMessage
+        Right _ -> Right input
+  where
+    parser :: Parser ParsedInsertStatement
+    parser = insertParser
+
 
 convertColumnsToString :: [Column] -> [ColumnName]
 convertColumnsToString columns =
@@ -283,18 +296,6 @@ checkIfLimitSectionIsSkipped (Limit name value) =
 getNameFromLimit :: Limit -> String
 getNameFromLimit (Limit name value) = name
 
-validateDeleteStatement :: TableName -> Limit -> Either ErrorMessage Bool
-validateDeleteStatement table limit =
-  case findDataFrame table of
-    Right (DataFrame tableColumns _) ->
-      case checkIfLimitSectionIsSkipped limit of
-        True -> Right True
-        False ->
-          case validateDatabaseColumns [table] [(getNameFromLimit limit)] of
-            True -> Right True
-            False -> Left $ "COLUMN '" ++ (getNameFromLimit limit) ++ "' does not exist in database"
-    Left errorMessage -> Left errorMessage
-
 findColumnIndexInList :: [Column] -> String -> Int
 findColumnIndexInList columns columnName =
   case [index | (Column name _, index) <- zip columns [0..], name == columnName] of
@@ -310,6 +311,18 @@ deleteRows (DataFrame tableColumns tableRows) (Limit columnName value) =
       if all (\row -> getValueAtIndex columnIndex row /= value) tableRows
         then Left $ "Value '" ++ (show value) ++ "' was not found in column '" ++ columnName ++ "'"
         else Right $ DataFrame tableColumns (filter (\row -> getValueAtIndex columnIndex row /= value) tableRows)
+
+validateDeleteStatement :: TableName -> Limit -> Either ErrorMessage Bool
+validateDeleteStatement table limit =
+  case findDataFrame table of
+    Right (DataFrame tableColumns _) ->
+      case checkIfLimitSectionIsSkipped limit of
+        True -> Right True
+        False ->
+          case validateDatabaseColumns [table] [(getNameFromLimit limit)] of
+            True -> Right True
+            False -> Left $ "COLUMN '" ++ (getNameFromLimit limit) ++ "' does not exist in database"
+    Left errorMessage -> Left errorMessage
 
 deleteStatement :: TableName -> Limit -> Either ErrorMessage DataFrame
 deleteStatement table limit =
@@ -332,21 +345,6 @@ deleteStatement table limit =
 
 getNamesFromSetValues :: [SetValue] -> [String]
 getNamesFromSetValues setValues = map (\(SetValue name _) -> name) setValues
-
-validateUpdateStatement :: TableName -> [SetValue] -> Limit ->  Either ErrorMessage Bool
-validateUpdateStatement table setValues limit = 
-  case findDataFrame table of
-    Right (DataFrame tableColumns _) ->
-      case validateDatabaseColumns [table] (getNamesFromSetValues setValues) of
-        True -> 
-          case checkIfLimitSectionIsSkipped limit of
-            True -> Right True
-            False ->
-              case validateDatabaseColumns [table] [(getNameFromLimit limit)] of
-                True -> Right True
-                False -> Left $ "Such COLUMNS do not exist in database (WHERE section)"
-        False -> Left $ "Such COLUMNS do not exist in database (SET section)"
-    Left errorMessage -> Left errorMessage
 
 updateColumn :: DataFrame -> [SetValue] -> Either ErrorMessage DataFrame
 updateColumn dataframe setValues =
@@ -399,6 +397,21 @@ checkIfValueExistsInRows rows index valueToFind =
       then Left $ "Value '" ++ show valueToFind ++ "' not found in the specified column"
       else Right matchingIndexes
 
+validateUpdateStatement :: TableName -> [SetValue] -> Limit ->  Either ErrorMessage Bool
+validateUpdateStatement table setValues limit = 
+  case findDataFrame table of
+    Right (DataFrame tableColumns _) ->
+      case validateDatabaseColumns [table] (getNamesFromSetValues setValues) of
+        True -> 
+          case checkIfLimitSectionIsSkipped limit of
+            True -> Right True
+            False ->
+              case validateDatabaseColumns [table] [(getNameFromLimit limit)] of
+                True -> Right True
+                False -> Left $ "Such COLUMNS do not exist in database (WHERE section)"
+        False -> Left $ "Such COLUMNS do not exist in database (SET section)"
+    Left errorMessage -> Left errorMessage
+
 updateStatement :: TableName -> [SetValue] -> Limit -> Either ErrorMessage DataFrame
 updateStatement table setValues limit =
   case parseStatement ("select * from " ++ table ++ ";") of
@@ -420,17 +433,6 @@ updateStatement table setValues limit =
                     Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
 
-parseStatement2 :: String -> Either ErrorMessage ParsedStatement2
-parseStatement2 input = case runParser parser input of
-  Left errorMessage -> Left errorMessage
-  Right (input, remainder) ->
-    case input of
-      Insert _ _ _ -> case runParser (optional whiteSpaceParser) remainder of
-        Left errorMessage -> Left errorMessage
-        Right _ -> Right input
-  where
-    parser :: Parser ParsedStatement2
-    parser = insertParser
 
 updateDatabase :: TableName -> DataFrame -> Database
 updateDatabase tableName newDataFrame = 
@@ -453,11 +455,11 @@ updateAndSave tableName newDataFrame = do
 decideParser :: String -> Either ErrorMessage Statements
 decideParser sql =
     case map toLower firstWord of
-        "insert" -> Right ParseStatement2
+        "insert" -> Right ParseInsertStatement
         "select" -> Right ParseStatement
         "show" -> Right ParseStatement
-        "delete" -> Right ParseStatement3
-        "update" -> Right ParseStatement4
+        "delete" -> Right ParseDeleteStatement
+        "update" -> Right ParseUpdateStatement
         _ -> Left "Unknown statement"
     where
         firstWord = takeWhile (/= ' ') sql
@@ -474,20 +476,20 @@ executeSql sql = do
                 case executeStatement parsedStatement of
                     Left errorMessage -> return $ Left errorMessage
                     Right result -> return $ Right result
-        ParseStatement2 -> 
-          case parseStatement2 sql of
+        ParseInsertStatement -> 
+          case parseInsertStatement sql of
               Right (Insert table columns values) -> case (insertStatement table columns values) of
                   Left errorMessage -> return $ Left errorMessage
                   Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
               Left errorMessage -> return $ Left errorMessage
-        ParseStatement3 ->
-          case parseStatement3 sql of
+        ParseDeleteStatement ->
+          case parseDeleteStatement sql of
               Right (Delete table limit) -> case (deleteStatement table limit) of
                 Left errorMessage -> return $ Left errorMessage
                 Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
               Left errorMessage -> return $ Left errorMessage
-        ParseStatement4 ->
-          case parseStatement4 sql of
+        ParseUpdateStatement ->
+          case parseUpdateStatement sql of
             Right (Update table setValues limit) -> case (updateStatement table setValues limit) of
               Left errorMessage -> return $ Left errorMessage
               Right result -> return $ Right (unsafePerformIO (updateAndSave table result))

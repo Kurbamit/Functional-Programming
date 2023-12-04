@@ -5,7 +5,8 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
-import Lib3 (parseStatement2, parseStatement3, ParsedStatement2(..), ParsedStatement3(..))
+import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement, 
+              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..))
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -169,33 +170,33 @@ main = hspec $ do
 
   describe "Lib3.update functions" $ do
     it "parses full 'INSERT' statement" $ do
-      Lib3.parseStatement2 "INSERT INTO employees (id, name, surname) values (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult
+      Lib3.parseInsertStatement "INSERT INTO employees (id, name, surname) values (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult
     it "parses full 'INSERT' statement case-insensitively" $ do
-      Lib3.parseStatement2 "InSeRt InTo employees (id, name, surname) VaLuEs (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult
+      Lib3.parseInsertStatement "InSeRt InTo employees (id, name, surname) VaLuEs (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult
     it "parses 'INSERT' statement with missing column names" $ do
-      Lib3.parseStatement2 "INSERT INTO employees values (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult2
+      Lib3.parseInsertStatement "INSERT INTO employees values (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult2
     it "parses 'INSERT' statement with missing column names case-insensitively" $ do
-      Lib3.parseStatement2 "InSeRt InTo employees VaLuEs (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult2
+      Lib3.parseInsertStatement "InSeRt InTo employees VaLuEs (123, HaskellisJega, NOT);" `shouldBe` Right insertTestResult2
     it "parses 'INSERT' statement with missing column names and values" $ do
-      Lib3.parseStatement2 "INSERT INTO employees values;" `shouldSatisfy` isLeft
+      Lib3.parseInsertStatement "INSERT INTO employees values;" `shouldSatisfy` isLeft
     it "parses 'INSERT' statement without every column name" $ do
-      Lib3.parseStatement2 "INSERT INTO employees (id) values (123);" `shouldBe` Right insertTestResult3
+      Lib3.parseInsertStatement "INSERT INTO employees (id) values (123);" `shouldBe` Right insertTestResult3
     it "parses 'INSERT' statement without every column name case-insensitively" $ do
-      Lib3.parseStatement2 "InSeRt InTo employees (id) VaLuEs (123);" `shouldBe` Right insertTestResult3
+      Lib3.parseInsertStatement "InSeRt InTo employees (id) VaLuEs (123);" `shouldBe` Right insertTestResult3
     it "parses 'INSERT' statement without every column name and value" $ do
-      Lib3.parseStatement2 "INSERT INTO employees (id) values;" `shouldSatisfy` isLeft
+      Lib3.parseInsertStatement "INSERT INTO employees (id) values;" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement" $ do
-      Lib3.parseStatement3 "DELETE employees WHERE id = 1;" `shouldBe` Right deleteTestResult
+      Lib3.parseDeleteStatement "DELETE employees WHERE id = 1;" `shouldBe` Right deleteTestResult
     it "parses 'DELETE' statement case-insensitively" $ do
-      Lib3.parseStatement3 "delete employees where id = 1;" `shouldBe` Right deleteTestResult
+      Lib3.parseDeleteStatement "delete employees where id = 1;" `shouldBe` Right deleteTestResult
     it "parses 'DELETE' statement with missing 'WHERE' keyword" $ do
-      Lib3.parseStatement3 "DELETE employees id = 1;" `shouldSatisfy` isLeft
+      Lib3.parseDeleteStatement "DELETE employees id = 1;" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement with missing 'WHERE' keyword case-insensitively" $ do
-      Lib3.parseStatement3 "delete employees id = 1;" `shouldSatisfy` isLeft
+      Lib3.parseDeleteStatement "delete employees id = 1;" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement with missing 'WHERE' keyword and deletes everything in the table" $ do
-      Lib3.parseStatement3 "DELETE employees;" `shouldBe` Right deleteTestResult2
+      Lib3.parseDeleteStatement "DELETE employees;" `shouldBe` Right deleteTestResult2
     it "parses 'DELETE' statement with missing 'WHERE' keyword and deletes everything in the table case-insensitively" $ do
-      Lib3.parseStatement3 "delete employees;" `shouldBe` Right deleteTestResult2
+      Lib3.parseDeleteStatement "delete employees;" `shouldBe` Right deleteTestResult2
 
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
@@ -279,20 +280,20 @@ aggregateFunctionsAndMultipleTablesTestResult = DataFrame
   [Column "id" IntegerType, Column "value" BoolType]
   [ [IntegerValue 2, NullValue] ]
 
-insertTestResult :: ParsedStatement2
+insertTestResult :: ParsedInsertStatement
 insertTestResult = Insert "employees" ["id", "name", "surname"] 
                   [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
 
-insertTestResult2 :: ParsedStatement2
+insertTestResult2 :: ParsedInsertStatement
 insertTestResult2 = Insert "employees" [] 
                     [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
 
-insertTestResult3 :: ParsedStatement2
+insertTestResult3 :: ParsedInsertStatement
 insertTestResult3 = Insert "employees" ["id"] 
                     [IntegerValue 123]
 
-deleteTestResult :: ParsedStatement3
+deleteTestResult :: ParsedDeleteStatement
 deleteTestResult = Delete "employees" (Limit "id" (IntegerValue 1))
 
-deleteTestResult2 :: ParsedStatement3
+deleteTestResult2 :: ParsedDeleteStatement
 deleteTestResult2 = Delete "employees" (Limit "" NullValue)
