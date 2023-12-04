@@ -34,7 +34,6 @@ import Data.List (find)
 import GHC.IO (unsafePerformIO)
 import Data.Char (toLower)
 import Control.Monad.Trans.Error (Error)
-import GHC.Windows (getErrorMessage)
 import Control.Monad (foldM)
 
 
@@ -418,7 +417,7 @@ updateStatement table setValues limit =
                 False ->
                   case updateEachColumnBasedOnCondition (DataFrame tableColumns tableRows) setValues limit of
                     Right result -> Right result
-                    Left getErrorMessage -> Left getErrorMessage
+                    Left errorMessage -> Left errorMessage
         Left errorMessage -> Left errorMessage
 
 parseStatement2 :: String -> Either ErrorMessage ParsedStatement2
@@ -491,6 +490,6 @@ executeSql sql = do
           case parseStatement4 sql of
             Right (Update table setValues limit) -> case (updateStatement table setValues limit) of
               Left errorMessage -> return $ Left errorMessage
-              Right result -> return $ Right result
+              Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
             Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
