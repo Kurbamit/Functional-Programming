@@ -34,6 +34,8 @@ import Data.List (find)
 import GHC.IO (unsafePerformIO)
 import Data.Char (toLower)
 import Control.Monad.Trans.Error (Error)
+import GHC.Windows (getErrorMessage)
+import Control.Monad (foldM)
 
 
 type TableName = String
@@ -367,6 +369,37 @@ createNewRow :: Row -> Int -> DataFrame.Value -> Row
 createNewRow values index newValue =
   take index values ++ [newValue] ++ drop (index + 1) values
 
+updateEachColumnBasedOnCondition :: DataFrame -> [SetValue] -> Limit -> Either ErrorMessage DataFrame
+updateEachColumnBasedOnCondition (DataFrame tableColumns tableRows) setValues (Limit columnName' value') =
+  case findColumnIndexInList tableColumns columnName' of
+    columnIndex ->
+      case checkIfValueExistsInRows tableRows columnIndex value' of
+        Left errorMessage -> Left errorMessage
+        Right indexes -> foldl (\eitherDF index -> eitherDF >>= \df -> updateRowBasedOnCondition index df setValues) (Right (DataFrame tableColumns tableRows)) indexes
+
+mapIndexed :: (Int -> a -> b) -> [a] -> [b]
+mapIndexed f xs = zipWith f [0..] xs
+
+updateRowBasedOnCondition :: Int -> DataFrame -> [SetValue] -> Either ErrorMessage DataFrame
+updateRowBasedOnCondition rowToModifyIndex (DataFrame tableColumns tableRows) setValues =
+  let updatedRows = foldl (\rows (SetValue columnName newValue) ->
+        case findColumnIndexInList tableColumns columnName of
+          columnIndex ->
+            mapIndexed (\i row ->
+              if i == rowToModifyIndex
+                then createNewRow row columnIndex newValue
+                else row
+            ) rows
+        ) tableRows setValues
+  in Right $ DataFrame tableColumns updatedRows
+
+checkIfValueExistsInRows :: [Row] -> Int -> DataFrame.Value -> Either ErrorMessage [Int]
+checkIfValueExistsInRows rows index valueToFind =
+  let matchingIndexes = [i | (i, row) <- zip [0..] rows, getValueAtIndex index row == valueToFind]
+  in if null matchingIndexes
+      then Left $ "Value '" ++ show valueToFind ++ "' not found in the specified column"
+      else Right matchingIndexes
+
 updateStatement :: TableName -> [SetValue] -> Limit -> Either ErrorMessage DataFrame
 updateStatement table setValues limit =
   case parseStatement ("select * from " ++ table ++ ";") of
@@ -382,7 +415,10 @@ updateStatement table setValues limit =
                   case updateColumn (DataFrame tableColumns tableRows) setValues of
                     Right result -> Right result
                     Left errorMessage -> Left errorMessage
-                -- False ->
+                False ->
+                  case updateEachColumnBasedOnCondition (DataFrame tableColumns tableRows) setValues limit of
+                    Right result -> Right result
+                    Left getErrorMessage -> Left getErrorMessage
         Left errorMessage -> Left errorMessage
 
 parseStatement2 :: String -> Either ErrorMessage ParsedStatement2
