@@ -197,17 +197,17 @@ main = hspec $ do
     it "do not parse 'INSERT' statement without semi-colon" $ do
       Lib3.parseInsertStatement "INSERT INTO employees (id, name, surname) values (123, HaskellisJega, NOT)" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement" $ do
-      Lib3.parseDeleteStatement "DELETE employees WHERE id = 1;" `shouldBe` Right deleteTestResult
+      Lib3.parseDeleteStatement "DELETE FROM employees WHERE id = 1;" `shouldBe` Right deleteTestResult
     it "parses 'DELETE' statement case-insensitively" $ do
-      Lib3.parseDeleteStatement "delete employees where id = 1;" `shouldBe` Right deleteTestResult
+      Lib3.parseDeleteStatement "DeLeTe FrOm employees WhErE id = 1;" `shouldBe` Right deleteTestResult
     it "parses 'DELETE' statement with missing 'WHERE' keyword" $ do
-      Lib3.parseDeleteStatement "DELETE employees id = 1;" `shouldSatisfy` isLeft
+      Lib3.parseDeleteStatement "DELETE FROM employees id = 1;" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement with missing 'WHERE' keyword case-insensitively" $ do
-      Lib3.parseDeleteStatement "delete employees id = 1;" `shouldSatisfy` isLeft
+      Lib3.parseDeleteStatement "DeLeTe FrOm employees id = 1;" `shouldSatisfy` isLeft
     it "parses 'DELETE' statement with missing 'WHERE' keyword and deletes everything in the table" $ do
-      Lib3.parseDeleteStatement "DELETE employees;" `shouldBe` Right deleteTestResult2
+      Lib3.parseDeleteStatement "DELETE FROM employees;" `shouldBe` Right deleteTestResult2
     it "parses 'DELETE' statement with missing 'WHERE' keyword and deletes everything in the table case-insensitively" $ do
-      Lib3.parseDeleteStatement "delete employees;" `shouldBe` Right deleteTestResult2
+      Lib3.parseDeleteStatement "DeLeTe FrOm employees;" `shouldBe` Right deleteTestResult2
     it "do not parse 'DELETE' statement without semi-colon" $ do
       Lib3.parseDeleteStatement "DELETE employees WHERE id = 1" `shouldSatisfy` isLeft
     it "do not parse 'DELETE' statement without 'WHERE' keyword" $ do
