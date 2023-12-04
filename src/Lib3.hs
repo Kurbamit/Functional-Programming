@@ -13,7 +13,10 @@ module Lib3
     saveDatabaseToJSON,
     parseInsertStatement,
     parseDeleteStatement,
-    parseUpdateStatement
+    parseUpdateStatement,
+    insertStatement,
+    deleteStatement,
+    updateStatement
   )
 where
 

@@ -6,7 +6,8 @@ import Lib1
 import Lib2 
 import Test.Hspec
 import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement,executeSql, 
-              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..))
+              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..),
+              insertStatement, deleteStatement, updateStatement)
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -224,6 +225,82 @@ main = hspec $ do
     it "do not parse 'UPDATE' statement without semi-colon" $ do
       Lib3.parseUpdateStatement "UPDATE employees SET name = Ponas" `shouldSatisfy` isLeft
 
+  describe "Lib3.insertStatement" $ do
+    it "inserts a new row into the table with valid input" $ do
+      let table = "employees"
+          columns = ["id", "name", "surname"]
+          values = [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
+      case insertStatement table columns values of
+          Left err -> expectationFailure $ "Unexpected error: " ++ err
+          Right (DataFrame tableColumns tableRows) -> do
+              length tableRows `shouldBe` 3
+    it "fails to insert with invalid table name" $ do
+      let table = "nonexistent_table"
+          columns = ["id", "name", "surname"]
+          values = [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
+      case insertStatement table columns values of
+          Left err -> err `shouldBe` "Expected ';' in the query"
+          Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
+    it "fails to insert with mismatched column and value count" $ do
+      let table = "employees"
+          columns = ["id", "name", "surname"]
+          values = [IntegerValue 123, StringValue "HaskellisJega"]
+      case insertStatement table columns values of
+          Left err -> err `shouldBe` "Incorrect specified number of values, 3 values expected"
+          Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
+
+  describe "Lib3.deleteStatement" $ do
+    it "deletes rows with valid input" $ do
+        let table = "employees"
+            limit = Limit "name" (StringValue "Vi")
+        case deleteStatement table limit of
+            Left err -> expectationFailure $ "Unexpected error: " ++ err
+            Right (DataFrame tableColumns tableRows) -> do
+                length tableRows `shouldBe` 1
+    it "fails to delete with invalid table name" $ do
+        let table = "nonexistent_table"
+            limit = Limit "name" (StringValue "Vi")
+        case deleteStatement table limit of
+            Left err -> err `shouldBe` "Expected ';' in the query"
+            Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
+    it "deletes rows with a valid limit" $ do
+        let table = "employees"
+            limit = Limit "name" (StringValue "Vi")
+        case deleteStatement table limit of
+            Left err -> expectationFailure $ "Unexpected error: " ++ err
+            Right (DataFrame tableColumns tableRows) -> do
+                length tableRows `shouldBe` 1
+    it "fails to delete with an invalid limit" $ do
+        let table = "employees"
+            limit = Limit "invalid_column" (StringValue "value")
+        case deleteStatement table limit of
+            Left err -> err `shouldBe` "COLUMN 'invalid_column' does not exist in database"
+            Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
+
+  describe "Lib3.updateStatement" $ do
+    it "updates rows with valid input" $ do
+      let table = "employees"
+          setValues = [SetValue "name" (StringValue "NewName")]
+          limit = Limit "name" (StringValue "Vi")
+      case updateStatement table setValues limit of
+          Left err -> expectationFailure $ "Unexpected error: " ++ err
+          Right (DataFrame tableColumns tableRows) -> do
+              length tableRows `shouldBe` 2
+    it "fails to update with invalid table name" $ do
+        let table = "nonexistent_table"
+            setValues = [SetValue "name" (StringValue "NewName")]
+            limit = Limit "name" (StringValue "Vi")
+        case updateStatement table setValues limit of
+            Left err -> err `shouldBe` "Expected ';' in the query"
+            Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
+    it "updates rows with a valid limit" $ do
+        let table = "employees"
+            setValues = [SetValue "name" (StringValue "NewName")]
+            limit = Limit "name" (StringValue "Vi")
+        case updateStatement table setValues limit of
+            Left err -> expectationFailure $ "Unexpected error: " ++ err
+            Right (DataFrame tableColumns tableRows) -> do
+                length tableRows `shouldBe` 2
 
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
