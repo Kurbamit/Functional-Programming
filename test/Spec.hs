@@ -8,6 +8,7 @@ import Test.Hspec
 import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement,executeSql, 
               ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..),
               insertStatement, deleteStatement, updateStatement)
+import qualified InMemoryTables as D
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -16,11 +17,11 @@ main = hspec $ do
     it "handles empty lists" $ do
       Lib1.findTableByName [] "" `shouldBe` Nothing
     it "handles empty names" $ do
-      Lib1.findTableByName Lib2.database "" `shouldBe` Nothing
+      Lib1.findTableByName D.database "" `shouldBe` Nothing
     it "can find by name" $ do
-      Lib1.findTableByName Lib2.database "employees" `shouldBe` Just (snd D.tableEmployees)
+      Lib1.findTableByName D.database "employees" `shouldBe` Just (snd D.tableEmployees)
     it "can find by case-insensitive name" $ do
-      Lib1.findTableByName Lib2.database "employEEs" `shouldBe` Just (snd D.tableEmployees)
+      Lib1.findTableByName D.database "employEEs" `shouldBe` Just (snd D.tableEmployees)
   describe "Lib1.parseSelectAllStatement" $ do
     it "handles empty input" $ do
       Lib1.parseSelectAllStatement "" `shouldSatisfy` isLeft
@@ -87,87 +88,87 @@ main = hspec $ do
     it "executes a 'SHOW TABLES;' statement" $ do
       case Lib2.parseStatement "SHOW TABLES;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right showTablesTestResult
     it "fails to execute a 'SELECT' statement if (;) is missing" $ do
-      case Lib2.parseStatement "SELECT id, name FROM employees" of 
+      case Lib2.parseStatement  "SELECT id, name FROM employees" of 
         Left err -> err `shouldBe` "Empty or unfinished query"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Left missingSemicolonTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Left missingSemicolonTestResult
     it "executes a 'SHOW TABLES;' case insensitively" $ do
       case Lib2.parseStatement "SHOW TABLES;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTablesTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right showTablesTestResult
     it "executes a 'SHOW TABLE employees;' statement" $ do
       case Lib2.parseStatement "SHOW TABLE employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right showTableTestResult
     it "executes a 'SHOW TABLE employees;' statement case insensitively" $ do
       case Lib2.parseStatement "ShOw TaBlE employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right showTableTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right showTableTestResult
     it "does not execute a 'SHOW TABLE' statement with case-mismatching table name" $ do
       case Lib2.parseStatement "SHOW TABLE EmPlOyEeS;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "executes a 'SELECT' statement with multiple columns" $ do
       case Lib2.parseStatement "SELECT id, name FROM employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right selectTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right selectTestResult
     it "does not execute a 'SELECT' statement with case-mismatching table name" $ do
       case Lib2.parseStatement "SELECT id FROM EmployeeS;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "does not execute a 'SELECT' statement with non-existing column names" $ do
       case Lib2.parseStatement "SELECT idd FROM employees;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "does not execute a 'SELECT' statement with case-mismatching column names" $ do
       case Lib2.parseStatement "SELECT Id FROM employees;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "executes a 'MAX' function with integer" $ do
       case Lib2.parseStatement "SELECT MAX(id) FROM employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult1
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right maxTestResult1
     it "executes a 'MAX' function with string" $ do
       case Lib2.parseStatement "SELECT MAX(name) FROM employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right maxTestResult2
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right maxTestResult2
     it "does not execute a 'MAX' function with case-mismatching column name" $ do
       case Lib2.parseStatement "SELECT MAX(Surname) FROM employees;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "executes a 'SUM' function" $ do
       case Lib2.parseStatement "SELECT SUM(id) FROM employees;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right sumTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right sumTestResult
     it "does not execute a 'SUM' function with case-mismatching column name" $ do
       case Lib2.parseStatement "SELECT SUM(Id) FROM employees;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "executes 'WHERE' statement" $ do
       case Lib2.parseStatement "SELECT id, name FROM employees WHERE id = 1;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult1
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right whereTestResult1
     it "does not execute 'WHERE' statement with case-mismatching column name" $ do
       case Lib2.parseStatement "SELECT id, name FROM employees WHERE Id = 1;" of
         Left err -> err `shouldBe` err
-        Right ps -> Lib2.executeStatement ps `shouldSatisfy` isLeft
+        Right ps -> Lib2.executeStatement ps D.database `shouldSatisfy` isLeft
     it "executes 'WHERE OR' statement" $ do
       case Lib2.parseStatement "SELECT id, surname FROM employees WHERE id = 1 OR surname = Dl;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right whereTestResult2
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right whereTestResult2
     it "executes a 'SELECT' statement with multiple columns from multiple tables" $ do
       case Lib2.parseStatement "SELECT id, name, flag FROM employees, flags;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right selectMultipleTablesTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right selectMultipleTablesTestResult
     it "executes a 'SELECT' statement with multiple columns and tables" $ do
       case Lib2.parseStatement "SELECT id, name, flag, value FROM employees, flags;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right multipleColumnsAndTablesTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right multipleColumnsAndTablesTestResult
     it "executes a 'SELECT' statement with aggregate functions and multiple tables" $ do
       case Lib2.parseStatement "SELECT max(id), sum(value) FROM employees, flags;" of 
         Left err -> err `shouldBe` "should have successfully parsed"
-        Right ps -> Lib2.executeStatement ps `shouldBe` Right aggregateFunctionsAndMultipleTablesTestResult
+        Right ps -> Lib2.executeStatement ps D.database `shouldBe` Right aggregateFunctionsAndMultipleTablesTestResult
 
   describe "Lib3.update functions" $ do
     it "parses full 'INSERT' statement" $ do
@@ -234,7 +235,7 @@ main = hspec $ do
       let table = "employees"
           columns = ["id", "name", "surname"]
           values = [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
-      case insertStatement table columns values of
+      case insertStatement table columns values D.database of
           Left err -> expectationFailure $ "Unexpected error: " ++ err
           Right (DataFrame tableColumns tableRows) -> do
               length tableRows `shouldBe` 3
@@ -242,14 +243,14 @@ main = hspec $ do
       let table = "nonexistent_table"
           columns = ["id", "name", "surname"]
           values = [IntegerValue 123, StringValue "HaskellisJega", StringValue "NOT"]
-      case insertStatement table columns values of
+      case insertStatement table columns values D.database of
           Left err -> err `shouldBe` "Expected ';' in the query"
           Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
     it "fails to insert with mismatched column and value count" $ do
       let table = "employees"
           columns = ["id", "name", "surname"]
           values = [IntegerValue 123, StringValue "HaskellisJega"]
-      case insertStatement table columns values of
+      case insertStatement table columns values D.database of
           Left err -> err `shouldBe` "Incorrect specified number of values, 3 values expected"
           Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
 
@@ -257,27 +258,27 @@ main = hspec $ do
     it "deletes rows with valid input" $ do
         let table = "employees"
             limit = Limit "name" (StringValue "Vi")
-        case deleteStatement table limit of
+        case deleteStatement table limit D.database of
             Left err -> expectationFailure $ "Unexpected error: " ++ err
             Right (DataFrame tableColumns tableRows) -> do
                 length tableRows `shouldBe` 1
     it "fails to delete with invalid table name" $ do
         let table = "nonexistent_table"
             limit = Limit "name" (StringValue "Vi")
-        case deleteStatement table limit of
+        case deleteStatement table limit D.database of
             Left err -> err `shouldBe` "Expected ';' in the query"
             Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
     it "deletes rows with a valid limit" $ do
         let table = "employees"
             limit = Limit "name" (StringValue "Vi")
-        case deleteStatement table limit of
+        case deleteStatement table limit D.database of
             Left err -> expectationFailure $ "Unexpected error: " ++ err
             Right (DataFrame tableColumns tableRows) -> do
                 length tableRows `shouldBe` 1
     it "fails to delete with an invalid limit" $ do
         let table = "employees"
             limit = Limit "invalid_column" (StringValue "value")
-        case deleteStatement table limit of
+        case deleteStatement table limit D.database of
             Left err -> err `shouldBe` "COLUMN 'invalid_column' does not exist in database"
             Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
 
@@ -286,7 +287,7 @@ main = hspec $ do
       let table = "employees"
           setValues = [SetValue "name" (StringValue "NewName")]
           limit = Limit "name" (StringValue "Vi")
-      case updateStatement table setValues limit of
+      case updateStatement table setValues limit D.database of
           Left err -> expectationFailure $ "Unexpected error: " ++ err
           Right (DataFrame tableColumns tableRows) -> do
               length tableRows `shouldBe` 2
@@ -294,14 +295,14 @@ main = hspec $ do
         let table = "nonexistent_table"
             setValues = [SetValue "name" (StringValue "NewName")]
             limit = Limit "name" (StringValue "Vi")
-        case updateStatement table setValues limit of
+        case updateStatement table setValues limit D.database of
             Left err -> err `shouldBe` "Expected ';' in the query"
             Right _  -> expectationFailure "Expected an error, but the statement was executed successfully"
     it "updates rows with a valid limit" $ do
         let table = "employees"
             setValues = [SetValue "name" (StringValue "NewName")]
             limit = Limit "name" (StringValue "Vi")
-        case updateStatement table setValues limit of
+        case updateStatement table setValues limit D.database of
             Left err -> expectationFailure $ "Unexpected error: " ++ err
             Right (DataFrame tableColumns tableRows) -> do
                 length tableRows `shouldBe` 2
