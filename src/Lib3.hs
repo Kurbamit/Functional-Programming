@@ -40,15 +40,17 @@ import Data.List (find)
 import GHC.IO (unsafePerformIO)
 import Data.Char (toLower)
 import Control.Monad.Trans.Error (Error)
+import qualified Data.ByteString.Char8 as BC
+import Data.ByteString (ByteString)
 
 type TableName = String
 type FileContent = String
 type ErrorMessage = String
 
 data ExecutionAlgebra next
-  = LoadFile TableName (FileContent -> next)
-  | GetTime (UTCTime -> next)
-  -- feel free to add more constructors here
+  = GetTime (UTCTime -> next)
+  | SaveFile TableName FileContent (() -> next)
+  | LoadFile (FileContent -> next)
   deriving Functor
 
 type ColumnName = String
@@ -77,8 +79,18 @@ data Statements
 
 type Execution = Free ExecutionAlgebra
 
-loadFile :: TableName -> Execution FileContent
-loadFile name = liftF $ LoadFile name id
+saveFile :: TableName -> FileContent -> Execution ()
+saveFile name content = liftF $ SaveFile name content id
+
+loadFile :: Execution FileContent
+loadFile = liftF $ LoadFile id
+
+getDatabaseContent :: Execution (Either ErrorMessage Database)
+getDatabaseContent = do
+  file <- loadFile
+  case decode (BLC.pack file) of 
+    Nothing -> return $ Left $ "Failed to deserialize 'database.json'"
+    Just db -> Pure $ Right db
 
 getTime :: Execution UTCTime
 getTime = liftF $ GetTime id
@@ -444,19 +456,30 @@ updateDatabase :: TableName -> DataFrame -> Database
 updateDatabase tableName newDataFrame = 
   (tableName, newDataFrame) : filter (\(name, _) -> name /= tableName) database
 
-saveDatabaseToJSON :: Database -> IO ()
-saveDatabaseToJSON updatedDatabase = do
-  let filePath = "src/db/database.json"
-      content = encode updatedDatabase
-  BLC.writeFile filePath content
+-- saveDatabaseToJSON :: Database -> BLC.ByteString
+-- saveDatabaseToJSON updatedDatabase = do
+--   let filePath = "src/db/database.json"
+--       contentByteString = encode updatedDatabase
+--   -- BLC.writeFile filePath contentByteString
+--   return contentByteString
 
-updateAndSave :: TableName -> DataFrame -> IO DataFrame
-updateAndSave tableName newDataFrame = do
-  let updatedDatabase = updateDatabase tableName newDataFrame 
-  saveDatabaseToJSON updatedDatabase
-  case lookup tableName updatedDatabase of
-    Just dataFrame -> return dataFrame
-    Nothing -> error "Table not found after update and save."
+saveDatabaseToJSON :: Database -> FileContent
+saveDatabaseToJSON updatedDatabase =
+  BLC.unpack (encode updatedDatabase)
+
+updateFile :: TableName -> DataFrame -> Execution ()
+updateFile name newDataFrame = do
+  let updatedDatabase = updateDatabase name newDataFrame 
+  fileContent <- Pure $ saveDatabaseToJSON updatedDatabase
+  saveFile name fileContent
+
+-- updateAndSave :: TableName -> DataFrame -> IO DataFrame
+-- updateAndSave tableName newDataFrame = do
+--   let updatedDatabase = updateDatabase tableName newDataFrame 
+--   saveDatabaseToJSON updatedDatabase
+--   case lookup tableName updatedDatabase of
+--     Just dataFrame -> return dataFrame
+--     Nothing -> error "Table not found after update and save."
 
 decideParser :: String -> Either ErrorMessage Statements
 decideParser sql =
@@ -486,18 +509,26 @@ executeSql sql = do
           case parseInsertStatement sql of
               Right (Insert table columns values) -> case (insertStatement table columns values) of
                   Left errorMessage -> return $ Left errorMessage
-                  Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
+                  Right result -> do
+                    updateFile table result
+                    return $ Right result
+                    -- return $ Right (unsafePerformIO (updateAndSave table result))
               Left errorMessage -> return $ Left errorMessage
         ParseDeleteStatement ->
           case parseDeleteStatement sql of
               Right (Delete table limit) -> case (deleteStatement table limit) of
                 Left errorMessage -> return $ Left errorMessage
-                Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
+                Right result -> do
+                  updateFile table result
+                  return $ Right result
+                  -- return $ Right (unsafePerformIO (updateAndSave table result))
               Left errorMessage -> return $ Left errorMessage
         ParseUpdateStatement ->
           case parseUpdateStatement sql of
             Right (Update table setValues limit) -> case (updateStatement table setValues limit) of
               Left errorMessage -> return $ Left errorMessage
-              Right result -> return $ Right (unsafePerformIO (updateAndSave table result))
+              Right result -> do
+                updateFile table result
+                return $ Right result
             Left errorMessage -> return $ Left errorMessage
     Left errorMessage -> return $ Left errorMessage
