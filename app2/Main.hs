@@ -26,7 +26,7 @@ ini = liftIO $ putStrLn "Welcome to select-more database! Press [TAB] for auto c
 
 completer :: (Monad m) => WordCompleter m
 completer n = do
-  let names = ["select", "*", "from", "show", "table", "tables"] ++ map fst database
+  let names = ["select", "*", "from", "show", "table", "tables"] -- ++ map fst database
   return $ Prelude.filter (L.isPrefixOf n) names
 
 -- Evaluation : handle each line user inputs
@@ -42,7 +42,7 @@ cmd c = do
     cmd' :: Integer -> Either String String
     cmd' s = do
       stmt <- Lib2.parseStatement c
-      df <- Lib2.executeStatement stmt
+      df <- Lib2.executeStatement stmt database
       _ <- Lib1.validateDataFrame df
       return $ Lib1.renderDataFrameAsTable s df
 

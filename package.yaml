@@ -40,6 +40,11 @@ library:
   source-dirs: src
   dependencies:
   - free
+  - aeson
+  - aeson-pretty
+  - text
+  - bytestring
+  - directory
   - time
   - transformers
 
@@ -53,6 +58,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - fp2023
+    - aeson
     - extra
     - repline
     - terminal-size
@@ -65,6 +71,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - fp2023
+    - aeson
     - extra
     - repline
     - terminal-size
@@ -77,6 +84,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - fp2023
+    - aeson
     - extra
     - repline
     - terminal-size
@@ -92,5 +100,6 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - aeson
     - fp2023
     - hspec
