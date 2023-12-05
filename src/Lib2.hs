@@ -9,11 +9,8 @@ module Lib2
     Limit (..),
     ParsedStatement (..),
     Parser,
-    readDatabaseFromJSON,
-    database,
     parseStatement,
     executeStatement,
-    runSql,
     runParser,
     tryParser,
     separate,
@@ -49,16 +46,6 @@ import System.IO.Unsafe (unsafePerformIO)
 import Data.Aeson (decode, encode)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BLC
-
-readDatabaseFromJSON :: IO Database
-readDatabaseFromJSON = do
-  content <- BLC.readFile "src/db/database.json"
-  case decode content of
-    Just db -> return db
-    Nothing -> error "Failed to decode JSON into Database"
-
-database :: [(TableName, DataFrame)]
-database = unsafePerformIO readDatabaseFromJSON
 
 type ErrorMessage = String
 type Database = [(TableName, DataFrame)]
@@ -356,9 +343,9 @@ extractNamesFromLimits limits = [name | Limit name _ <- limits]
 extractNameFromLimit :: Limit -> String
 extractNameFromLimit (Limit name _) = name
 
-selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Either ErrorMessage DataFrame
-selectFromTable tableName columns limits =
-  case findTable tableName of
+selectFromTable :: TableName -> [ColumnWithAggregate] -> [Limit] -> Database -> Either ErrorMessage DataFrame
+selectFromTable tableName columns limits db =
+  case findTable tableName db of
     Just (DataFrame tableColumns tableRows) ->
       if "*" `elem` map getColumnName columns
       then
@@ -388,13 +375,13 @@ getColumnsWithIndexes selectedColumns allColumns =
 filterRow :: Row -> [(Int, Column)] -> Row
 filterRow row selectedColumns = [row !! index | (index, _) <- selectedColumns]
 
-selectMultipleTables :: [TableName] -> [ColumnWithAggregate] -> [Limit] -> [Either ErrorMessage DataFrame]
-selectMultipleTables tableNames columns limits =
-  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns) (filterTableLimits tableName limits)) tableNames
+selectMultipleTables :: [TableName] -> [ColumnWithAggregate] -> [Limit] -> Database -> [Either ErrorMessage DataFrame]
+selectMultipleTables tableNames columns limits db =
+  map (\tableName -> selectFromTable tableName (filterTableColumns tableName columns db) (filterTableLimits tableName limits db) db) tableNames
 
-filterTableColumns :: String -> [ColumnWithAggregate] -> [ColumnWithAggregate]
-filterTableColumns tableName columns =
-  case findTable tableName of
+filterTableColumns :: String -> [ColumnWithAggregate] -> Database -> [ColumnWithAggregate]
+filterTableColumns tableName columns db =
+  case findTable tableName db of
     Just (DataFrame tableColumns _) ->
       case columns of
         (column : rest) ->
@@ -405,9 +392,9 @@ filterTableColumns tableName columns =
 extractColumnName :: Column -> String
 extractColumnName (Column name _) = name
 
-filterTableLimits :: String -> [Limit] -> [Limit]
-filterTableLimits tableName limits =
-  case findTable tableName of
+filterTableLimits :: String -> [Limit] -> Database -> [Limit]
+filterTableLimits tableName limits db =
+  case findTable tableName db of
     Just (DataFrame tableColumns _) ->
       filter (\limit -> extractNameFromLimit limit `elem` map extractColumnName tableColumns) limits
 
@@ -441,20 +428,20 @@ combineRows :: [Row] -> [Row] -> Either ErrorMessage [Row]
 combineRows rows1 rows2 = Right [v1 ++ v2 | v1 <- rows1, v2 <- rows2]
 
 
-validateDatabaseColumns :: [String] -> [String] -> Bool
-validateDatabaseColumns tables columns =
+validateDatabaseColumns :: [String] -> [String] -> Database -> Bool
+validateDatabaseColumns tables columns db =
   all (\column ->
     any (\table ->
-      case lookup table database of
+      case lookup table db of
         Just (DataFrame tableColumns _) ->
           any (\(Column name _) -> (name == column || column == "*" || column == "now()")) tableColumns
         Nothing -> False
     ) tables
   ) columns
 
-validateDatabaseTables :: [String] -> Bool
-validateDatabaseTables tables =
-  all (\table -> case (findTable table) of
+validateDatabaseTables :: [String] -> Database -> Bool
+validateDatabaseTables tables db =
+  all (\table -> case (findTable table db) of
     Just (DataFrame _ _) -> True
     Nothing -> False
   ) tables
@@ -476,38 +463,29 @@ addDataFrame newDataFrame currentList = currentList ++ [Right newDataFrame]
 
 -- Executes a parsed statemet. Produces a DataFrame. Uses
 -- InMemoryTables.databases a source of data.
-executeStatement :: ParsedStatement -> Either ErrorMessage DataFrame
-executeStatement parsedStatement = case parsedStatement of
-  ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) database
-  ShowTable tableName -> case findTable tableName of
+executeStatement :: ParsedStatement -> Database -> Either ErrorMessage DataFrame
+executeStatement parsedStatement db = case parsedStatement of
+  ShowTables -> Right $ DataFrame [Column "Tables" StringType] $ map (\(tableName, _) -> [StringValue tableName]) db
+  ShowTable tableName -> case findTable tableName db of
     Just (DataFrame columns _) -> Right $ DataFrame [Column "Columns" StringType] $ map (\(Column colName _) -> [StringValue colName]) columns
     Nothing -> Left "TABLE not found"
   Select columns tables conditions -> 
-    case validateDatabaseTables tables of 
-      True -> case validateDatabaseColumns tables (getColumnNames columns) of
-        True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) of
+    case validateDatabaseTables tables db of 
+      True -> case validateDatabaseColumns tables (getColumnNames columns) db of
+        True -> case (validateDatabaseColumns tables (extractNamesFromLimits conditions)) db of
           True -> case findColumnName "now()" columns of
-            True -> combineDataFrames (addDataFrame (createNowDataFrame (unsafePerformIO getCurrentTime)) (selectMultipleTables tables columns conditions))
-            False -> combineDataFrames (selectMultipleTables tables columns conditions)
+            True -> combineDataFrames (addDataFrame (createNowDataFrame (unsafePerformIO getCurrentTime)) (selectMultipleTables tables columns conditions db))
+            False -> combineDataFrames (selectMultipleTables tables columns conditions db)
           False -> Left $ "COLUMNS specified in WHERE clause do not exists in database"
         False -> Left $ "Such COLUMNS do not exist in database"
       False -> Left $ "Such TABLES do not exist in database"
   -- Implement execution for other SQL commands here
   _ -> Left "Not implemented: executeStatement"
 
-runSql :: String -> Either ErrorMessage [TableName]
-runSql input = do
-  parsed <- parseStatement input
-  case executeStatement parsed of
-    Right (DataFrame [Column _ StringType] rows) ->
-      Right $ map (\(StringValue tableName : _) -> tableName) rows
-    Right _ -> Left "Invalid result format"
-    Left err -> Left err
-    
 -- Helper function to perform case-sensitive lookup
-findTable :: TableName -> Maybe DataFrame
-findTable targetTable =
-  listToMaybe [table | (tableName, table) <- database, targetTable `caseSensitiveEquals` tableName]
+findTable :: TableName -> Database -> Maybe DataFrame
+findTable targetTable db =
+  listToMaybe [table | (tableName, table) <- db, targetTable `caseSensitiveEquals` tableName]
 
 -- Helper function to perform case-sensitive comparison
 caseSensitiveEquals :: String -> String -> Bool

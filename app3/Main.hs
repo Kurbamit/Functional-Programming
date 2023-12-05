@@ -69,3 +69,6 @@ runExecuteIO (Free step) = do
         runStep (Lib3.SaveFile name content next) = do
           putStrLn $ "\n Saving content to file 'database.json'"
           writeFile ("src/db/database.json") content >>= return . next 
+        runStep (Lib3.LoadFile next) = do
+          putStrLn $ "\n Loading content from file 'database.json'"
+          readFile ("src/db/database.json") >>= return . next

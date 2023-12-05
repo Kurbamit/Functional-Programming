@@ -2,7 +2,7 @@ module Main (main) where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.List qualified as L
--- import InMemoryTables (database)
+import InMemoryTables (database)
 import Lib1 qualified
 import Lib2 qualified
 import System.Console.Repline
@@ -42,7 +42,7 @@ cmd c = do
     cmd' :: Integer -> Either String String
     cmd' s = do
       stmt <- Lib2.parseStatement c
-      df <- Lib2.executeStatement stmt
+      df <- Lib2.executeStatement stmt database
       _ <- Lib1.validateDataFrame df
       return $ Lib1.renderDataFrameAsTable s df
 
