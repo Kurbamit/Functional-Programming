@@ -5,10 +5,15 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
-import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement,executeSql, 
-              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..),
-              insertStatement, deleteStatement, updateStatement)
+import Lib3 
 import qualified InMemoryTables as D
+import qualified Data.ByteString.Lazy.Char8 as BLC
+import Data.Aeson as Aeson
+import Data.IORef
+import Data.Aeson.KeyMap (lookup)
+import Data.IORef (readIORef)
+import Control.Monad.Free (Free (..), liftF)
+import System.Posix.Internals (puts)
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -307,6 +312,14 @@ main = hspec $ do
             Right (DataFrame tableColumns tableRows) -> do
                 length tableRows `shouldBe` 2
 
+  describe "Lib3.executeSql" $ do
+    it "Selects column with WHERE criteria" $ do
+      db <- setupDB
+      df <- runExecuteIO "employees" db (Lib3.executeSql "SELECT id from employees WHERE id = 1;")
+      databaseDF <- getTableFromDB db "employees"
+      databaseDF `shouldBe` Just (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"], [IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+
+
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
   [Column "Tables" StringType]
@@ -421,3 +434,28 @@ nowTestResult =  Select [ColumnWithAggregate "id" Nothing,ColumnWithAggregate "n
 
 nowTestResult2 :: ParsedStatement
 nowTestResult2 = Select [ColumnWithAggregate "now()" Nothing] ["employees"] []
+
+type InMemoryDatabase = IORef [(String, String)]
+
+getTableFromDB :: InMemoryDatabase -> String -> IO (Maybe DataFrame)
+getTableFromDB db name = do 
+  result <- readIORef db
+  case Prelude.lookup name result of
+    Just result -> return (Aeson.decode (BLC.pack result) :: Maybe DataFrame)
+    Nothing -> return Nothing
+
+setupDB :: IO InMemoryDatabase
+setupDB = newIORef $ map (\(a, b) -> (a, BLC.unpack (Aeson.encode b))) D.database
+
+runExecuteIO :: String -> InMemoryDatabase -> Lib3.Execution a -> IO a
+runExecuteIO _ _ (Pure a) = return a
+runExecuteIO tableName db (Free step) = do
+  next <- runStep step
+  runExecuteIO tableName db next
+  where
+    runStep :: Lib3.ExecutionAlgebra a -> IO a
+    runStep (Lib3.LoadFile next) = do
+      table <- fmap (Prelude.lookup tableName) (readIORef db) 
+      case table of
+        Just result -> return result >>= return . next
+        Nothing -> return "" >>= return . next
