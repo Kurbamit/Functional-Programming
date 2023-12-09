@@ -103,3 +103,5 @@ tests:
     - aeson
     - fp2023
     - hspec
+    - bytestring
+    - free

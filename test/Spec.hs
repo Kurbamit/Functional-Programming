@@ -5,10 +5,17 @@ import DataFrame (Column (..), ColumnType (..), Value (..), DataFrame (..))
 import Lib1
 import Lib2 
 import Test.Hspec
-import Lib3 (parseInsertStatement, parseDeleteStatement, parseUpdateStatement,executeSql, 
-              ParsedInsertStatement(..), ParsedDeleteStatement(..), ParsedUpdateStatement(..), SetValue(..),
-              insertStatement, deleteStatement, updateStatement)
+import Lib3 
 import qualified InMemoryTables as D
+import qualified Data.ByteString.Lazy.Char8 as BLC
+import Data.Aeson as Aeson
+import Data.IORef
+import Data.Aeson.KeyMap (lookup)
+import Data.IORef (readIORef)
+import Control.Monad.Free (Free (..), liftF)
+import System.Posix.Internals (puts)
+import GHC.TypeError (ErrorMessage)
+import GHC.IO (unsafePerformIO)
 
 -------------------------------------------------------------------------------------------------------- 
 main :: IO ()
@@ -307,6 +314,16 @@ main = hspec $ do
             Right (DataFrame tableColumns tableRows) -> do
                 length tableRows `shouldBe` 2
 
+  describe "Lib3.executeSql" $ do
+    it "Selects column with WHERE criteria" $ do
+      db <- setupDB
+      df <- runExecuteIO "employees" db (Lib3.executeSql "SELECT id from employees WHERE id = 1;")
+      df `shouldBe` Right (DataFrame [Column "id" IntegerType] [[IntegerValue 1]])
+    it "Selects all columns without WHERE criteria" $ do
+      db <- setupDB
+      df <- runExecuteIO "employees" db (Lib3.executeSql "SELECT * FROM employees;")
+      df `shouldBe` Right (DataFrame [Column "id" IntegerType, Column "name" StringType, Column "surname" StringType] [[IntegerValue 1, StringValue "Vi", StringValue "Po"], [IntegerValue 2, StringValue "Ed", StringValue "Dl"]])
+      
 showTablesTestResult :: DataFrame
 showTablesTestResult = DataFrame
   [Column "Tables" StringType]
@@ -421,3 +438,27 @@ nowTestResult =  Select [ColumnWithAggregate "id" Nothing,ColumnWithAggregate "n
 
 nowTestResult2 :: ParsedStatement
 nowTestResult2 = Select [ColumnWithAggregate "now()" Nothing] ["employees"] []
+
+type Database =  [(String, IORef String)]
+
+setupDB :: IO Main.Database
+setupDB = do
+  employees <- newIORef "[[\"employees\",[[[\"id\",\"IntegerType\"],[\"name\",\"StringType\"],[\"surname\",\"StringType\"]],[[{\"contents\":1,\"tag\":\"IntegerValue\"},{\"contents\":\"Vi\",\"tag\":\"StringValue\"},{\"contents\":\"Po\",\"tag\":\"StringValue\"}],[{\"contents\":2,\"tag\":\"IntegerValue\"},{\"contents\":\"Ed\",\"tag\":\"StringValue\"},{\"contents\":\"Dl\",\"tag\":\"StringValue\"}]]]]]"
+  flags <- newIORef "[[\"flags\",[[[\"id\",\"IntegerType\"],[\"flag\",\"StringType\"],[\"value\",\"BoolType\"]],[[{\"contents\":1,\"tag\":\"IntegerValue\"},{\"contents\":\"a\",\"tag\":\"StringValue\"},{\"contents\":true,\"tag\":\"BoolValue\"}],[{\"contents\":1,\"tag\":\"IntegerValue\"},{\"contents\":\"b\",\"tag\":\"StringValue\"},{\"contents\":true,\"tag\":\"BoolValue\"}],[{\"contents\":2,\"tag\":\"IntegerValue\"},{\"contents\":\"b\",\"tag\":\"StringValue\"},{\"contents\":null,\"tag\":\"NullValue\"}],[{\"contents\":2,\"tag\":\"IntegerValue\"},{\"contents\":\"b\",\"tag\":\"StringValue\"},{\"contents\":false,\"tag\":\"BoolValue\"}]]]]]"
+  return [("employees", employees),("flags", flags)]
+
+runExecuteIO :: String -> Main.Database -> Lib3.Execution a -> IO a
+runExecuteIO _ _ (Pure a) = return a
+runExecuteIO tableName db (Free step) = do
+  next <- runStep step
+  runExecuteIO tableName db next
+  where
+    runStep :: Lib3.ExecutionAlgebra a -> IO a
+    runStep (Lib3.LoadFile next) = do
+      case Prelude.lookup tableName db of
+        Just result -> do
+          content <- readIORef result
+          return content >>= return . next
+        Nothing -> do
+            putStrLn $ "\n Such table does not exist"
+            return "" >>= return . next
